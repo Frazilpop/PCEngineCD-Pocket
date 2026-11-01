@@ -168,7 +168,6 @@ module pce (
   reg          cd_region;
 	wire			CD_almost_full;
 	wire			AUDIO_almost_full;
-	wire 			SUB_almost_full;
   wire [21:0]  cd_ram_a;
   wire 			cd_ram_rd, cd_ram_wr;
   wire [7:0] 	cd_ram_do;
@@ -234,10 +233,11 @@ module pce (
 		.CD_RESET 				(cd_reset_req),
 
 		.CD_DATA					(!cd_dat_byte ? cd_dat[7:0] : cd_dat[15:8]),
-		.CD_WR					(cd_wr),
+		.CD_DATA_WR				(cd_wr && cd_dm),
+		.CD_AUDIO_WR			(cd_wr && !cd_dm && !cd_sub),
+		.CD_SUBCD_WR			(cd_wr && !cd_dm && cd_sub),
 		.CD_DATA_END			(cd_dat_req),
 		.CD_DM					(cd_dm),
-		.CD_SUB					(cd_sub),
 
 		.CDDA_SL					(cdda_sl),
 		.CDDA_SR					(cdda_sr),
@@ -264,7 +264,6 @@ module pce (
 		
 		.CD_almost_full		(CD_almost_full),
 		.AUDIO_almost_full	(AUDIO_almost_full),
-		.SUB_almost_full		(SUB_almost_full),
 		.BORDER_OUT				(border)
   );
   
@@ -287,7 +286,7 @@ module pce (
 		.cdctl_wr(cdctl_wr),
 		.cd_data_out(cd_data_out),
 		.cd_en(cd_en),
-		.AUDIO_almost_full(AUDIO_almost_full || SUB_almost_full),
+		.AUDIO_almost_full(AUDIO_almost_full),
 		.CD_almost_full(CD_almost_full)
    );
 
@@ -371,12 +370,13 @@ module pce (
    	if (cd_dat_write) begin
    		if (!cd_wr) begin
    			cd_wr <= 1;
+				// Bit 14 of the header: the sector carries its subcode after its 2352 bytes of audio
+				cd_sub <= cd_cdg && cd_dat_cnt >= 12'd2352;
    		end
    		else begin
    			cd_wr <= 0;
    			cd_dat_byte <= ~cd_dat_byte;
    			cd_dat_cnt <= cd_dat_cnt + 15'd1;
-				if (cd_cdg && cd_dat_cnt >= 12'd2352) cd_sub <= 1;
    			if (cd_dat_byte || cd_dat_cnt >= cd_dat_len-1) begin
    				cd_dat_write <= 0;
    			end
@@ -663,10 +663,12 @@ end
 
   always @(posedge clk_sys_42_95) begin : input_block
     reg [ 1:0] last_gp;
-    reg        high_buttons;
+    reg        high_buttons = 0;
     reg [14:0] mouse_to;
     reg        ms_stb;
     reg [7:0] msr_x, msr_y;
+
+    if (reset) high_buttons <= 0;
 
     joy_latch <= joy_data[{high_buttons, joy_out[0], 2'b00}+:4];
 

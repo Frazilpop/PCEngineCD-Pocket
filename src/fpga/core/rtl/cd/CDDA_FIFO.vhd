@@ -46,6 +46,7 @@ ENTITY CDDA_FIFO IS
 		clock		: IN STD_LOGIC ;
 		data		: IN STD_LOGIC_VECTOR (31 DOWNTO 0);
 		rdreq		: IN STD_LOGIC ;
+		sclr		: IN STD_LOGIC ;
 		wrreq		: IN STD_LOGIC ;
 		almost_full		: OUT STD_LOGIC ;
 		empty		: OUT STD_LOGIC ;
@@ -82,6 +83,7 @@ ARCHITECTURE SYN OF cdda_fifo IS
 			clock	: IN STD_LOGIC ;
 			data	: IN STD_LOGIC_VECTOR (31 DOWNTO 0);
 			rdreq	: IN STD_LOGIC ;
+			sclr	: IN STD_LOGIC ;
 			wrreq	: IN STD_LOGIC ;
 			almost_full	: OUT STD_LOGIC ;
 			empty	: OUT STD_LOGIC ;
@@ -114,6 +116,7 @@ BEGIN
 		clock => clock,
 		data => data,
 		rdreq => rdreq,
+		sclr => sclr,
 		wrreq => wrreq,
 		almost_full => sub_wire0,
 		empty => sub_wire1,
@@ -156,7 +159,7 @@ END SYN;
 -- Retrieval info: PRIVATE: rsFull NUMERIC "0"
 -- Retrieval info: PRIVATE: rsUsedW NUMERIC "0"
 -- Retrieval info: PRIVATE: sc_aclr NUMERIC "0"
--- Retrieval info: PRIVATE: sc_sclr NUMERIC "0"
+-- Retrieval info: PRIVATE: sc_sclr NUMERIC "1"
 -- Retrieval info: PRIVATE: wsEmpty NUMERIC "0"
 -- Retrieval info: PRIVATE: wsFull NUMERIC "1"
 -- Retrieval info: PRIVATE: wsUsedW NUMERIC "0"
@@ -179,10 +182,12 @@ END SYN;
 -- Retrieval info: USED_PORT: full 0 0 0 0 OUTPUT NODEFVAL "full"
 -- Retrieval info: USED_PORT: q 0 0 32 0 OUTPUT NODEFVAL "q[31..0]"
 -- Retrieval info: USED_PORT: rdreq 0 0 0 0 INPUT NODEFVAL "rdreq"
+-- Retrieval info: USED_PORT: sclr 0 0 0 0 INPUT NODEFVAL "sclr"
 -- Retrieval info: USED_PORT: wrreq 0 0 0 0 INPUT NODEFVAL "wrreq"
 -- Retrieval info: CONNECT: @clock 0 0 0 0 clock 0 0 0 0
 -- Retrieval info: CONNECT: @data 0 0 32 0 data 0 0 32 0
 -- Retrieval info: CONNECT: @rdreq 0 0 0 0 rdreq 0 0 0 0
+-- Retrieval info: CONNECT: @sclr 0 0 0 0 sclr 0 0 0 0
 -- Retrieval info: CONNECT: @wrreq 0 0 0 0 wrreq 0 0 0 0
 -- Retrieval info: CONNECT: almost_full 0 0 0 0 @almost_full 0 0 0 0
 -- Retrieval info: CONNECT: empty 0 0 0 0 @empty 0 0 0 0

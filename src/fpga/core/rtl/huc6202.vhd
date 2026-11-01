@@ -55,12 +55,11 @@ signal PRIN : std_logic_vector(1 downto 0);
 signal PRI  : std_logic_vector(3 downto 0);
 
 signal VDC_PRI		: std_logic_vector(8 downto 0);
-signal INMIX		: std_logic;
 
 begin
 
-PRIN(0) <= '1' when WIN1 < x"40" or X > WIN1 else '0';
-PRIN(1) <= '1' when WIN2 < x"40" or X > WIN2 else '0';
+PRIN(0) <= '1' when WIN1 <= x"40" or X >= WIN1 else '0';
+PRIN(1) <= '1' when WIN2 <= x"40" or X >= WIN2 else '0';
 PRI <= PRI0(3 downto 0) when PRIN = "00" else
 		 PRI0(7 downto 4) when PRIN = "01" else
 		 PRI1(3 downto 0) when PRIN = "10" else
@@ -100,16 +99,7 @@ begin
 					end case;
 			end case;
 
-			if INMIX = '1' and PRI(1 downto 0) /= "00" and VDCDATA(7 downto 0) = x"00" then
-				-- replace color 0 -> 256 if in mixing and one of VDC is enabled
-				if SGX = '1' then
-					VDC_OUT <= "000000000";
-				else
-					VDC_OUT <= "100000000";
-				end if;
-			else
-				VDC_OUT <= VDCDATA;
-			end if;
+			VDC_OUT <= VDCDATA;
 		end if;
 	end if;
 end process;
@@ -122,13 +112,12 @@ process( CLK ) begin
 			WIN1 <= (others => '0');
 			WIN2 <= (others => '0');
 			VDCNUM <= '0';
-			INMIX <= '0';
 			DO <= X"FF";
 		else
 			if WR_N = '0' then
 				case A is
-					when "000" => PRI0 <= DI; INMIX <= '1';
-					when "001" => PRI1 <= DI; INMIX <= '1';
+					when "000" => PRI0 <= DI;
+					when "001" => PRI1 <= DI;
 					when "010" => WIN1(7 downto 0) <= DI;
 					when "011" => WIN1(9 downto 8) <= DI(1 downto 0);
 					when "100" => WIN2(7 downto 0) <= DI;

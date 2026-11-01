@@ -60,14 +60,13 @@ entity pce_top is
 		CD_RESET		: out std_logic;
 
 		CD_DATA		: in  std_logic_vector(7 downto 0);
-		CD_WR			: in  std_logic;
+		CD_DATA_WR	: in  std_logic;
+		CD_AUDIO_WR	: in  std_logic;
+		CD_SUBCD_WR	: in  std_logic;			-- subcode data
 		CD_DATA_END	: out std_logic;
+		CD_almost_full		: out std_logic;
+		AUDIO_almost_full	: out std_logic;
 		CD_DM			: in  std_logic;
-		CD_SUB		: in 	std_logic;
-		
-		CD_almost_full 		: out std_logic;
-		AUDIO_almost_full 	: out std_logic;
-		SUB_almost_full 		: out std_logic;
 
 		CDDA_SL		: out signed(15 downto 0);
 		CDDA_SR		: out signed(15 downto 0);
@@ -99,6 +98,8 @@ end pce_top;
 architecture rtl of pce_top is
 
 signal RESET_N			: std_logic := '0';
+signal RESET_PRE_N	: std_logic := '0';
+signal VCE_RESET_N	: std_logic := '1';
 
 -- CPU signals
 signal CPU_CE			: std_logic;
@@ -132,15 +133,18 @@ signal CPU_PRAM_SEL_N: std_logic;
 signal VCE_DO			: std_logic_vector(7 downto 0);
 
 -- VDC signals
-signal VDC0_DO			: std_logic_vector(7 downto 0);
+signal VDC0_DO			: std_logic_vector(15 downto 0);		-- only lower 8 bits are used in 8-bit mode
+alias  VDC0_DO_LO		: std_logic_vector(7 downto 0) is VDC0_DO(7 downto 0);
 signal VDC0_BUSY_N	: std_logic;
 signal VDC0_IRQ_N		: std_logic;
 signal VDC0_COLNO		: std_logic_vector(8 downto 0);
-signal VDC1_DO			: std_logic_vector(7 downto 0);
+signal VDC1_DO			: std_logic_vector(15 downto 0);		-- only lower 8 bits are used in 8-bit mode
+alias  VDC1_DO_LO		: std_logic_vector(7 downto 0) is VDC1_DO(7 downto 0);
 signal VDC1_BUSY_N	: std_logic;
 signal VDC1_IRQ_N		: std_logic;
 signal VDC1_COLNO		: std_logic_vector(8 downto 0);
 signal VDC_CLKEN		: std_logic;
+signal VDC_CLKEN_F	: std_logic;
 signal VPC_DO			: std_logic_vector(7 downto 0);
 signal VDCNUM    		: std_logic;
 signal VDC_COLNO		: std_logic_vector(8 downto 0);
@@ -185,7 +189,7 @@ component CODES is
 	);
 end component;
 
-signal VCE_HS_F, VCE_HS_R, VCE_VS_F, VCE_VS_R: std_logic;
+signal VCE_HSYNC_F, VCE_HSYNC_R, VCE_VSYNC_F, VCE_VSYNC_R: std_logic;
 signal VRAM0_A	   : std_logic_vector(15 downto 0);
 signal VRAM0_DI	: std_logic_vector(15 downto 0);
 signal VRAM0_DO	: std_logic_vector(15 downto 0);
@@ -196,7 +200,6 @@ signal VRAM1_DO	: std_logic_vector(15 downto 0);
 signal VRAM1_WE	: std_logic;
 signal CLR_A	   : std_logic_vector(14 downto 0);
 signal CLR_WE		: std_logic;
-signal VCE_DCC		: std_logic_vector(1 downto 0);
 signal VDC0_BORDER: std_logic;
 signal VDC0_GRID	: std_logic_vector(1 downto 0);
 signal CPU_PRE_RD	: std_logic;
@@ -312,7 +315,7 @@ VIDEO_HS <= not HS_N;
 VCE : entity work.huc6260
 port map(
 	CLK 		=> CLK,
-	RESET_N	=> RESET_N,
+	RESET_N	=> VCE_RESET_N,
 
 	-- CPU Interface
 	A			=> CPU_A(2 downto 0),
@@ -325,9 +328,13 @@ port map(
 	-- VDC Interface
 	COLNO		=> VDC_COLNO,
 	CLKEN		=> VDC_CLKEN,
+	CLKEN_F  => VDC_CLKEN_F,
+	HSYNC_F	=> VCE_HSYNC_F,
+	HSYNC_R	=> VCE_HSYNC_R,
+	VSYNC_F	=> VCE_VSYNC_F,
+	VSYNC_R	=> VCE_VSYNC_R,
 	CLKEN_FS => VIDEO_CE_FS,
 	RVBL		=> ReducedVBL,
-	DCC		=> VCE_DCC,
 	
 	GRID_EN	=> GRID_EN,
 	BORDER_EN=> BORDER_EN,
@@ -342,12 +349,7 @@ port map(
 	VS_N		=> VS_N,
 	HS_N		=> HS_N,
 	HBL		=> VIDEO_HBL,
-	VBL		=> VIDEO_VBL,
-	
-	HS_F		=> VCE_HS_F,
-	HS_R		=> VCE_HS_R,
-	VS_F		=> VCE_VS_F,
-	VS_R		=> VCE_VS_R
+	VBL		=> VIDEO_VBL
 );
 
 VDC0 : entity work.HUC6270
@@ -358,22 +360,23 @@ port map(
 
 	-- CPU Interface
 	CPU_CE	=> CPU_CE,
+	BYTEWORD => '1',						-- 8-bit access
 	A			=> CPU_A(1 downto 0),
 	CS_N		=> CPU_VDC0_SEL_N,
 	WR_N		=> CPU_WR_N,
 	RD_N		=> CPU_RD_N,
-	DI			=> CPU_DO,
+	DI			=> "00000000" & CPU_DO,
 	DO 		=> VDC0_DO,
 	BUSY_N	=> VDC0_BUSY_N,
 	IRQ_N		=> VDC0_IRQ_N,
 
 	-- VCE Interface
 	DCK_CE	=> VDC_CLKEN,
-	DCC		=> VCE_DCC,
-	HS_F		=> VCE_HS_F,
-	HS_R		=> VCE_HS_R,
-	VS_F		=> VCE_VS_F,
-	VS_R		=> VCE_VS_R,
+	DCK_CE_F => VDC_CLKEN_F,
+	HSYNC_F	=> VCE_HSYNC_F,
+	HSYNC_R	=> VCE_HSYNC_R,
+	VSYNC_F	=> VCE_VSYNC_F,
+	VSYNC_R	=> VCE_VSYNC_R,
 	VD			=> VDC0_COLNO,
 	
 	BORDER	=> VDC0_BORDER,
@@ -416,22 +419,23 @@ generate_SGX: if (LITE = 0) generate begin
 
 		-- CPU Interface
 		CPU_CE	=> CPU_CE,
+		BYTEWORD => '1',						-- 8-bit access
 		A			=> CPU_A(1 downto 0),
 		CS_N		=> CPU_VDC1_SEL_N,
 		WR_N		=> CPU_WR_N,
 		RD_N		=> CPU_RD_N,
-		DI			=> CPU_DO,
+		DI			=> "00000000" & CPU_DO,
 		DO 		=> VDC1_DO,
 		BUSY_N	=> VDC1_BUSY_N,
 		IRQ_N		=> VDC1_IRQ_N,
 
 		-- VCE Interface
 		DCK_CE	=> VDC_CLKEN,
-		DCC		=> VCE_DCC,
-		HS_F		=> VCE_HS_F,
-		HS_R		=> VCE_HS_R,
-		VS_F		=> VCE_VS_F,
-		VS_R		=> VCE_VS_R,
+		DCK_CE_F => VDC_CLKEN_F,
+		HSYNC_F	=> VCE_HSYNC_F,
+		HSYNC_R	=> VCE_HSYNC_R,
+		VSYNC_F	=> VCE_VSYNC_F,
+		VSYNC_R	=> VCE_VSYNC_R,
 		VD			=> VDC1_COLNO,
 		--GRID		=> VDC1_GRID,
 		
@@ -472,7 +476,7 @@ generate_SGX: if (LITE = 0) generate begin
 		DI			=> CPU_DO,
 		DO 		=> VPC_DO,
 		
-		HS_F		=> VCE_HS_F,
+		HS_F		=> VCE_HSYNC_F,
 		VDC0_IN  => VDC0_COLNO,
 		VDC1_IN  => VDC1_COLNO,
 		VDC_OUT  => VDC_COLNO,
@@ -524,17 +528,17 @@ CPU_BRM_SEL_N <= '0' when CPU_A(20 downto 11) = x"F7"&"00" and CD_BRAM_EN = '1' 
 CPU_ROM_SEL_N <= CPU_A(20);
 
 -- CPU data bus
-CPU_DI <= RAM_DO        when CPU_RAM_SEL_N  = '0'
-			else CD_DO     when CD_SEL_N       = '0'
-			else CD_RAM_DI when CD_RAM_CS_N    = '0' or AC_RAM_CS_N = '0'
-			else AC_DO     when AC_SEL_N       = '0'
-			else BRM_DO    when CPU_BRM_SEL_N  = '0'
-			else PRAM_DO   when CPU_PRAM_SEL_N = '0'
-			else ROM_DO    when CPU_ROM_SEL_N  = '0'
-			else VCE_DO    when CPU_VCE_SEL_N  = '0'
-			else VDC0_DO   when CPU_VDC0_SEL_N = '0'
-			else VDC1_DO   when CPU_VDC1_SEL_N = '0'
-			else VPC_DO    when CPU_VPC_SEL_N  = '0'
+CPU_DI <= RAM_DO         when CPU_RAM_SEL_N  = '0'
+			else CD_DO      when CD_SEL_N       = '0'
+			else CD_RAM_DI  when CD_RAM_CS_N    = '0' or AC_RAM_CS_N = '0'
+			else AC_DO      when AC_SEL_N       = '0'
+			else BRM_DO     when CPU_BRM_SEL_N  = '0'
+			else PRAM_DO    when CPU_PRAM_SEL_N = '0'
+			else ROM_DO     when CPU_ROM_SEL_N  = '0'
+			else VCE_DO     when CPU_VCE_SEL_N  = '0'
+			else VDC0_DO_LO when CPU_VDC0_SEL_N = '0'
+			else VDC1_DO_LO when CPU_VDC1_SEL_N = '0'
+			else VPC_DO     when CPU_VPC_SEL_N  = '0'
 			else X"FF";
 
 -- Perform address mangling to mimic HuCard chip mapping.
@@ -596,7 +600,16 @@ process( CLK ) begin
 				rombank <= CPU_A(1 downto 0);
 			end if;
 		end if;
-		RESET_N <= not RESET;
+		RESET_PRE_N <= not RESET;
+		RESET_N <= RESET_PRE_N;
+		-- The Pocket holds RESET for seconds while it loads a system card or a save.
+		-- MiSTer's VCE stops its counters in reset, which here would stop the syncs the
+		-- line buffer and the firmware's OSD run on, so the VCE sees only the reset's
+		-- last clock and comes out of it with everything else, as MiSTer's does.
+		VCE_RESET_N <= '1';
+		if RESET = '0' and RESET_PRE_N = '0' then
+			VCE_RESET_N <= '0';
+		end if;
 	end if;
 end process;
 
@@ -666,17 +679,18 @@ port map(
 	CD_DOUT_SEND=> CD_DOUT_SEND,
 	
 	CD_DATA		=> CD_DATA,
-	CD_WR			=> CD_WR,
+	CD_DATA_WR	=> CD_DATA_WR,
+	CD_AUDIO_WR	=> CD_AUDIO_WR,
+	CD_SUBCD_WR	=> CD_SUBCD_WR,
 	CD_DATA_END	=> CD_DATA_END,
-	CD_almost_full 	=> CD_almost_full,
-	AUDIO_almost_full => AUDIO_almost_full,
-	SUB_almost_full	=> SUB_almost_full,
+	CD_almost_full		=> CD_almost_full,
+	AUDIO_almost_full	=> AUDIO_almost_full,
 	
 	CD_REGION   => CD_REGION,
 	CD_RESET		=> CD_RESET,
 	
 	DM				=> CD_DM,
-	SUB			=> CD_SUB,
+	
 	CD_SL			=> CDDA_SL,
 	CD_SR			=> CDDA_SR,
 	AD_S			=> ADPCM_S
