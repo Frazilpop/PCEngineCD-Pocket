@@ -1,0 +1,34 @@
+{
+  "core": {
+    "magic": "APF_VER_1",
+    "metadata": {
+      "platform_ids": ["pcecd"],
+      "shortname": "PCEngineCD",
+      "description": "PC Engine (known as TurboGrafx-16 in the US) by NEC",
+      "author": "frazilpop",
+      "url": "https://github.com/Frazilpop/PCEngineCD-Pocket",
+      "version": "0.3.0",
+      "date_release": "2026-11-01"
+    },
+    "framework": {
+      "target_product": "Analogue Pocket",
+      "version_required": "2.3",
+      "sleep_supported": false,
+      "dock": {
+        "supported": true,
+        "analog_output": false
+      },
+      "hardware": {
+        "link_port": false,
+        "cartridge_adapter": 0
+      }
+    },
+    "cores": [
+      {
+        "name": "default",
+        "id": 0,
+        "filename": "bitstream.rbf_r"
+      }
+    ]
+  }
+}

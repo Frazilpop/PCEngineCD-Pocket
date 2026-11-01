@@ -78,8 +78,12 @@ bool old_arcade = 0;
 void core_reg_update(){
 	// This can be used for polling the APF regs from the interaction menu to change core settings
 	// Region setup
-	if (AFP_REGISTOR(1) & 0x1) cue.SetRegion(1);
+	if ((AFP_REGISTOR(1) & 0x1) || bios_us) cue.SetRegion(1);
 	else cue.SetRegion(0);
+	// Fast seek, MiSTer's CD Seek setting: off unless asked for. The bit that told
+	// the firmware this came from main.sv as cd_en, so every seek on every disc was
+	// instant, and a game that counts on the drive's time saw it take none.
+	cue.SetFastSeek(AFP_REGISTOR(1) & 0x4);
 	// if (old_region != AFP_REGISTOR(1) & 0x1) full_core_reset();
 	// Arcade Setup
 

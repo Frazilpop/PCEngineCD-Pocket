@@ -12,10 +12,35 @@
 
 static int need_reset=0;
 static uint8_t has_command = 0;
-int apf_data_already_streamed = 0;
+bool bios_us = false;
 
 uint32_t poll_timer = 0;
 	
+// A US system card has the words its Japanese one has in Japanese, and the drive
+// answers a US console's signature for it (cd.vhd's registers C5 to C7): MiSTer's
+// test, its whole file for "ALL DATA". The file is read with the scratch RAM the
+// CUE is about to be read into. An error here is not one the player needs to see.
+static bool bios_is_us()
+{
+	const char *chunk = (const char *)(MAIN_SCRACH_ADDRESS_OFFSET + 0x200);
+	uint32_t size = dataslot_size(1);
+	bool error_enabled = file_error_enabled;
+	int error_code = file_error_code;
+	bool found = false;
+	for (uint32_t at = 0; (at < size) && !found; at += 0x3C00)
+	{
+		uint32_t len = (size - at < 0x3E00) ? size - at : 0x3E00;
+		if (dataslot_read(1, APF_SCRACH_ADDRESS_OFFSET + 0x200, at, len)) break;
+		for (uint32_t i = 0; (i + 8 <= len) && !found; i++)
+		{
+			found = !memcmp(chunk + i, "ALL DATA", 8);
+		}
+	}
+	file_error_enabled = error_enabled;
+	file_error_code = error_code;
+	return found;
+}
+
 void pcecd_poll()
 {
 	static uint8_t last_req = 0;
@@ -26,18 +51,20 @@ void pcecd_poll()
 	if (!poll_timer) poll_timer = RISCGetTimer2(13);
 
 	if (need_reset) {
-		mainprintf("reset start");
 		need_reset = 0;
-		cue.Unload();
-		
-		mainprintf("reset 1");
-		cue.Reset();
-		
-		mainprintf("reset 2");
+		// The console's reset, and the game's resets of the drive, come here. The
+		// first one loads the disc, as nothing else does; after that the disc stays,
+		// as on MiSTer. A game resetting the drive used to throw the TOC away and read
+		// the whole CUE again, every file of it, with the game waiting on the drive.
+		if (!cue.loaded) {
+			bios_us = bios_is_us();
+			cue.Reset();
+			pcecd_set_image(DATASLOT_BRAM(0), DATASLOT_BRAM(1));
+		}
+		else {
+			cue.Reset();
+		}
 		poll_timer = 0;
-		pcecd_set_image(DATASLOT_BRAM(0), DATASLOT_BRAM(1));
-		
-		mainprintf("reset 3");
 	}
 	// mainprintf("milli seconds %0.8x \r\n", poll_timer);
 	if (RISCCheckTimer2(poll_timer))
@@ -55,7 +82,7 @@ void pcecd_poll()
 			cue.SendStatus(cue.GetStatus());
 			cue.has_status = 0;
 		}
-		else if (cue.data_req) {
+		else if (cue.data_req && !cue.latency) {
 			cue.SendDataRequest();
 			cue.data_req = false;
 		}
@@ -98,7 +125,6 @@ void pcecd_poll()
 
 		default:
 			need_reset = 1;
-			if (apf_data_already_streamed) file_error_code = 5;
 			break;
 		}
 	}

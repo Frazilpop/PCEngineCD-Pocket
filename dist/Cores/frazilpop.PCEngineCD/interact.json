@@ -144,7 +144,7 @@
         "value": 1
       },
       {
-        "name": "System Region",
+        "name": "US Console",
         "id": 72,
         "type": "check",
         "enabled": true,
@@ -162,8 +162,19 @@
         "address": "0xF0000004",
         "persist": true,
 		"mask": "0xfffffffd",
-        "defaultval": 0,
+        "defaultval": 2,
         "value": 2
+      },
+      {
+        "name": "Fast CD Seek",
+        "id": 76,
+        "type": "check",
+        "enabled": true,
+        "address": "0xF0000004",
+        "persist": true,
+		"mask": "0xfffffffb",
+        "defaultval": 0,
+        "value": 4
       }
     ],
     "messages": []

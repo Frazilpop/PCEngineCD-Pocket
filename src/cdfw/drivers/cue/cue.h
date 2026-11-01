@@ -84,7 +84,7 @@ typedef struct
 typedef struct
 {
 	int dataslot = 0;
-	int opened = 0;
+	int first = 0;	// the lowest disc address the file has: below it is a PREGAP
 	int size = 0;
 	int offset = 0;
 	int pregap = 0;
@@ -142,6 +142,7 @@ public:
 	void SendStatus(uint16_t status);
 	void SendDataRequest();
 	void SetRegion(uint8_t rgn);
+	void SetFastSeek(bool fast);
 
 private:
 	toc_t toc;
@@ -158,6 +159,9 @@ private:
 	uint8_t CDDAMode;
 	sense_t sense;
 	uint8_t region;
+	bool fast_seek;
+	bool int_pend;
+	bool subq_pend;
 	uint8_t *chd_hunkbuf;
 	int chd_hunknum;
 
@@ -167,6 +171,8 @@ private:
 	// uint8_t sec_buf[2352 + 2];
 
 	uint16_t LoadCUE(int dataslot);
+	void EndTrack(int i);
+	uint32_t FilePos(int i, int lba);
 	int SectorSend(uint8_t* header);
 	void ReadData();
 	void ReadCDDA();
@@ -187,6 +193,7 @@ private:
 
 //pcecdd.cpp
 extern cue_t cue;
+extern bool bios_us;
 
 
 void pcecd_poll();

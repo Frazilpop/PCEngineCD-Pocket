@@ -71,7 +71,12 @@ void mainloop()
 	DisableInterrupts();
 	mainprintf("about to go in baby\r\n");
 	uint32_t display_cd = RISCGetTimer2(200);
-	DATASLOT_BRAM_SAVE(0) = (uint32_t)0x00000800;
+	// The Pocket writes the save back at the size the slot table says, and writes
+	// none at 0. Found by the slot's id: this was word 5, the third slot's size
+	// whatever was third, and 0.2.3's data.json put Save fourth.
+	uint32_t save_slot = dataslot_search_id(2);
+	DATASLOT_BRAM((save_slot ? save_slot : 4) + 1) = (uint32_t)0x00000800;	// 4: where data.json has it, if the table has no id yet
+	int file_error_shown = 0;
 	while(true){
 
 		if(DATASLOT_UPDATE_REG(0)){
@@ -93,8 +98,10 @@ void mainloop()
 			file_error_code = 0;
 		}
 
-		if (file_error_code != 0){
-			osd_display_error_dataslot(file_error_code);
+		// drawn once: the same loop serves the disc, and this redrew every line every pass
+		if (file_error_code != file_error_shown){
+			file_error_shown = file_error_code;
+			if (file_error_code != 0) osd_display_error_dataslot(file_error_code);
 		}
 
 		// This checks if we are wanting to do a reboot of the core from the interaction menu. We want to do this last so nothing is held in the buffers

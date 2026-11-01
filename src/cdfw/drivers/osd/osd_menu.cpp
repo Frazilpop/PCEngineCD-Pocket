@@ -119,43 +119,6 @@ void osd_display_error_dataslot (int data_error){
     InfoEnable(5, 80, 31, 12, 192, 65535); // Had to use the info as some of the PCE outputs are smaller
     break;
 
-  case 5:
-    OsdWrite ("----------Core Error--------");
-    OsdUpdate(0);
-    OsdClear();
-    OsdWrite("The Core did something weird");
-    OsdUpdate(1);
-    OsdClear();
-    OsdWrite("the MPU received a reset ");
-    OsdUpdate(2);
-    OsdClear();
-    OsdWrite("command from the core. ");
-    OsdUpdate(3);
-    OsdClear();
-    OsdWrite("If this is a hacked CD ISO  ");
-    OsdUpdate(4);
-    OsdClear();
-    OsdWrite("This could be a unallighed" );
-    OsdUpdate(5);
-    OsdClear();
-    OsdWrite("Data location for the TOC   ");
-    OsdUpdate(6);
-    OsdClear();
-    OsdWrite("Pain in the ass error to fix");
-    OsdUpdate(7);
-    OsdClear();
-    OsdWrite("Will Fix later YAY - MAZA  ");
-    OsdUpdate(8);
-    OsdClear();
-    OsdWrite("ULTRAFP64 COMING SOON");
-    OsdUpdate(9);
-    OsdClear();
-    OsdWrite("------------------------------");
-    OsdUpdate(10);
-    OsdClear();
-    InfoEnable(10, 80, 30, 11, 192, 65535); // Had to use the info as some of the PCE outputs are smaller
-    break;
-
   default:
     sprintf (s, "-------DataFile Error---- %d", data_error);
     OsdWrite(s);

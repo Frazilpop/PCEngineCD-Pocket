@@ -58,7 +58,6 @@ extern dataslot_type aft;
 
 extern bool file_error_enabled;
 extern int file_error_code;
-extern int apf_data_already_streamed;
 
 /*********************************
  * 
@@ -70,7 +69,6 @@ extern int apf_data_already_streamed;
 #define error_info_dataslot_File_Not_Found 2;
 #define error_info_dataslot_Load_Faild 3;
 #define error_info_dataslot_save_Faild 4;
-#define error_info_Core_Restart_code 5;
 #define error_info_Core_data_slot_change 6;
 
 #define MAIN_ADDRESS_OFFSET          0x00000000 // We want to make sure we advise the APF where the BRAM is of the CPU
@@ -86,7 +84,6 @@ extern int apf_data_already_streamed;
 #define RESET_CORE(x) *(volatile unsigned int *)(RESTARTBASE+x)
 
 #define AFP_REGISTOR(x) *(volatile unsigned int *)(AFP_REGISTOR_BASE+(x<<2))
-#define DATASLOT_BRAM_SAVE(x) *(volatile unsigned int *)(DATASLOT_BRAM_BASE+(5<<2))
 
 #define CORE_OUTPUT_REGISTOR() *(volatile unsigned int *)(IO_CORE_REGISTOR_BASE+(4))
 #define CORE_INPUT_REGISTOR()  *(volatile unsigned int *)(IO_CORE_REGISTOR_BASE+(0))

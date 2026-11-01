@@ -2,6 +2,7 @@
 #
 #   make test     build natively with AddressSanitizer + UBSan and run
 #   make test32   build 32-bit like the MPU and run (needs g++-multilib)
+#   make disc-check DIR=/Volumes/.../Assets/pcecd/common   every real disc under DIR
 
 FW  := $(CURDIR)/../..
 LIB := $(FW)/lib/sscanf.c $(FW)/lib/vscanf.c $(FW)/lib/stropen.c
@@ -28,7 +29,14 @@ build/native/test_cue: $(SRC)
 build/m32/test_cue: $(SRC)
 	$(call build,build/m32,-m32)
 
+# Every disc under DIR through the loader, and the data checked where it says
+disc-check: build/native/disc_check
+	./$< "$(DIR)"
+
+build/native/disc_check: disc_check.cpp host_stubs.h $(FW)/drivers/cue/cue.cpp build/native/test_cue
+	g++ $(SAN) -w -std=gnu++17 -g -O1 -Ibuild/native/stubs -include host_stubs.h -o $@ disc_check.cpp build/native/*.o
+
 clean:
 	rm -rf build
 
-.PHONY: test test32 clean
+.PHONY: test test32 clean disc-check

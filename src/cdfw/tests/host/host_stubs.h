@@ -23,6 +23,7 @@ int OpenFileNameDataSlot(dataslot_type *aft, const char *s);
 void clearscrachram(uint32_t offset, uint32_t size);
 uint32_t RISCFileSeek(const char *s, uint32_t offset, uint32_t size, uint32_t track, dataslot_type *aft);
 uint32_t RISCFileReadAdv(int dataslot, uint8_t cmd0, uint8_t cmd1, uint8_t cmd_hps, uint32_t offset);
+void RISCSendZeros(uint8_t cmd0, uint8_t cmd1, uint8_t cmd_hps, uint32_t size);
 void HPS_DisableIO();
 uint16_t spi_w(uint16_t word);
 uint16_t HPS_spi_uio_cmd_cont(uint16_t cmd);

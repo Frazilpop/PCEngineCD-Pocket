@@ -18,7 +18,6 @@ uint32_t fake_dataslot_bram[2];
 dataslot_type aft;
 bool file_error_enabled;
 int file_error_code;
-int apf_data_already_streamed;
 
 static std::string cue_path, cue_text;
 static std::map<std::string, uint32_t> sd_card;	// path -> size
@@ -71,6 +70,7 @@ uint32_t dataslot_read(uint16_t slot, uint32_t address, uint32_t offset, uint32_
 void clearscrachram(uint32_t offset, uint32_t size) { memset(fake_scratch + offset, 0, size); }
 uint32_t RISCFileSeek(const char *, uint32_t, uint32_t, uint32_t, dataslot_type *) { return 1; }
 uint32_t RISCFileReadAdv(int, uint8_t, uint8_t, uint8_t, uint32_t) { return 1; }
+void RISCSendZeros(uint8_t, uint8_t, uint8_t, uint32_t) {}
 void HPS_DisableIO() {}
 uint16_t spi_w(uint16_t) { return 0; }
 uint16_t HPS_spi_uio_cmd_cont(uint16_t) { return 0; }
@@ -169,7 +169,7 @@ static bool same_toc(const toc_t &a, const toc_t &b)
 	if ((a.last != b.last) || (a.end != b.end)) return false;
 	for (int i = 0; i < a.last; i++) {
 		const cd_track_t &x = a.tracks[i], &y = b.tracks[i];
-		if ((x.start != y.start) || (x.end != y.end) || (x.offset != y.offset) || (x.size != y.size) || (x.opened != y.opened) ||
+		if ((x.start != y.start) || (x.end != y.end) || (x.offset != y.offset) || (x.size != y.size) || (x.first != y.first) ||
 			(x.type != y.type) || (x.sector_size != y.sector_size) || (x.dataslot != y.dataslot) || strcmp(x.name, y.name))
 			return false;
 	}
@@ -225,7 +225,9 @@ static void test_plain_cue()
 	}
 }
 
-// One unquoted bin holding every track, with a PREGAP: 0.2.3's TOC.
+// One unquoted bin holding every track, with a PREGAP. The disc addresses are
+// 0.2.3's bar the end, as the PREGAP is on the disc and not in the file. The file
+// positions are not: 0.2.3's went on 150 frames too far from the PREGAP on.
 static void test_single_bin()
 {
 	const std::string dir = common + "Gate/";
@@ -239,15 +241,75 @@ static void test_single_bin()
 		"  TRACK 04 MODE1/2352\n    INDEX 00 15:00:00\n    INDEX 01 15:03:00\n");
 	CHECK(opens == std::vector<std::string>({dir + "gate.bin"}));
 	CHECK(r.toc.last == 4);
-	CHECK(r.toc.end == 90000);
-	const int starts[] = {0, 45150, 54300, 67875}, ends[] = {45150, 54150, 67650, 90000};
-	const int offsets[] = {0, 106192800, 127713600, 159642000};
+	CHECK(r.toc.end == 90150);
+	const int starts[] = {0, 45150, 54300, 67875}, ends[] = {45000, 54150, 67650, 90150};
+	const int firsts[] = {0, 45150, 54150, 67650};
+	const int offsets[] = {0, 45000 * 2352, 54150 * 2352, 67725 * 2352};
 	for (int i = 0; i < 4; i++) {
 		CHECK(r.toc.tracks[i].start == starts[i]);
 		CHECK(r.toc.tracks[i].end == ends[i]);
+		CHECK(r.toc.tracks[i].first == firsts[i]);
 		CHECK(r.toc.tracks[i].offset == offsets[i]);
 		CHECK(!strcmp(r.toc.tracks[i].name, "gate.bin"));
 	}
+}
+
+// The frames of a PREGAP are in no file: FilePos of an address past it is where
+// the track's own data is.
+static void test_pregap_positions()
+{
+	const std::string dir = common + "Gap/";
+	sd_card.clear();
+	sd_card[dir + "gap.bin"] = 2352 * 7000;
+	load(dir + "gap.cue",
+		"FILE \"gap.bin\" BINARY\n"
+		"  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n"
+		"  TRACK 02 MODE1/2352\n    PREGAP 00:03:00\n    INDEX 01 00:44:65\n"
+		"  TRACK 03 AUDIO\n    PREGAP 00:02:00\n    INDEX 01 01:07:72\n");
+	CHECK(cue.toc.tracks[1].start == 3365 + 225);
+	CHECK(cue.toc.tracks[2].start == 5097 + 225 + 150);
+	CHECK(cue.toc.tracks[0].end == 3365);	// the gap after it is not the track's
+	CHECK(cue.FilePos(1, 3365 + 225) == 3365 * 2352);
+	CHECK(cue.FilePos(2, 5097 + 375) == 5097 * 2352);
+	CHECK(cue.toc.end == 7000 + 375);
+	CHECK(cue.GetTrackByLBA(3400, &cue.toc) == 1);	// in the gap
+	CHECK(3400 < cue.toc.tracks[1].first);
+}
+
+// A MODE1/2048 track among AUDIO in one bin (Mugen Senshi Valis's, Valis IV's):
+// a frame after it is 2048 bytes on from a frame in it.
+static void test_mixed_sector_sizes()
+{
+	const std::string dir = common + "Mixed/";
+	sd_card.clear();
+	sd_card[dir + "mix.bin"] = 3000 * 2352 + 1000 * 2048 + 500 * 2352;
+	load(dir + "mix.cue",
+		"FILE \"mix.bin\" BINARY\n"
+		"  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n"
+		"  TRACK 02 MODE1/2048\n    INDEX 01 00:40:00\n"
+		"  TRACK 03 AUDIO\n    INDEX 01 00:53:25\n");
+	CHECK(cue.toc.tracks[1].offset == 3000 * 2352);
+	CHECK(cue.toc.tracks[2].offset == 3000 * 2352 + 1000 * 2048);
+	CHECK(cue.FilePos(1, 3010) == 3000 * 2352 + 10 * 2048);
+	CHECK(cue.FilePos(2, 4010) == 3000 * 2352 + 1000 * 2048 + 10 * 2352);
+	CHECK(cue.toc.end == 4500);
+}
+
+// A CUE's blank lines and tabs are nothing (Ys IV's second line is blank, and the
+// loader stopped there with no tracks).
+static void test_blank_lines()
+{
+	const std::string dir = common + "Blank/";
+	sd_card.clear();
+	sd_card[dir + "b.bin"] = 2352 * 1000;
+	result r = load(dir + "b.cue",
+		"FILE \"b.bin\" BINARY\n\n"
+		"  REM SESSION 01        (*)\n"
+		"\tTRACK 01 AUDIO\r\n\t\tINDEX 01 00:00:00\r\n\t\t REM LBA: 0\r\n\r\n   \r\n"
+		"    TRACK 02 MODE1/2352\n      INDEX 01 00:02:00\n\n");
+	CHECK(r.toc.last == 2);
+	CHECK(r.toc.tracks[1].start == 150);
+	CHECK(r.toc.end == 1000);
 }
 
 // CUEs in one folder, bins in another: same TOC as with the bins next to the CUE.
@@ -381,6 +443,9 @@ int main()
 	test_resolve();
 	test_plain_cue();
 	test_single_bin();
+	test_pregap_positions();
+	test_mixed_sector_sizes();
+	test_blank_lines();
 	test_relative_paths();
 	test_fallback();
 	test_errors();

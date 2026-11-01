@@ -211,7 +211,7 @@ uint32_t RISCFileReadAdv(int dataslot, uint8_t cmd0, uint8_t cmd1, uint8_t cmd_h
   uint8_t *pointer_second;
   uint8_t *pointer0 = (uint8_t *)MAIN_SCRACH_ADDRESS_OFFSET;//sector_buffer0;
   uint8_t *pointer1 = (uint8_t *)MAIN_SCRACH_ADDRESS_OFFSET + MEM_BUFFER_SIZE_C;//sector_buffer1;
-  bool overflow = ((sector_buffer_offset + sector_buffer_size) >= MEM_BUFFER_SIZE_C);
+  bool overflow = ((sector_buffer_offset + offset) > MEM_BUFFER_SIZE_C);	// by what this read sends: a track need not have the sector size of the last full load
   uint32_t offset_main;
   uint32_t offset_second;
   uint32_t offset_diff = (MEM_BUFFER_SIZE_C - sector_buffer_offset);
@@ -260,4 +260,14 @@ uint32_t RISCFileReadAdv(int dataslot, uint8_t cmd0, uint8_t cmd1, uint8_t cmd_h
   HPS_DisableIO();
   // mainprintf("\033[92;1;1m Done the change\033[0m\r\n");
   return 1;
+}
+
+// A sector of nothing, for an address the file does not have (a PREGAP).
+void RISCSendZeros(uint8_t cmd0, uint8_t cmd1, uint8_t cmd_hps, uint32_t size) {
+  uint16_t command = (uint16_t){(cmd1 & 0xff)<<8 | (cmd0 & 0xff)};
+  HPS_EnableIO();
+  spi_b(cmd_hps);
+  spi_w(command);
+  for (uint32_t i = 0; i < size; i += 2) spi_w(0);
+  HPS_DisableIO();
 }

@@ -1,3 +1,17 @@
+# Everything a build makes lives under build/ (tools/build.sh): Quartus's
+# db/, incremental_db/ and output_files/ in src/fpga are links into it.
+/build/
+/src/fpga/db
+/src/fpga/incremental_db
+/src/fpga/output_files
+# The firmware's objects, made by tools/firmware.sh.
+/src/cdfw/app/build.riscv.*/
+/src/cdfw/app/out.map
+# Written with the date by Analogue's pre-flow script on every compile.
+/src/fpga/apf/build_id.mif
+# Games copied from the card for the simulation; never committed
+/roms/
+.DS_Store
 *.rbf_r
 *.rev
 *.zip
