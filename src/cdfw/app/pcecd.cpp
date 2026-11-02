@@ -180,8 +180,10 @@ void pcecd_set_image(int dataslot, int size)
 	{
 		cue.Unload();
 		notify_mount(0);
-		// error_osd_displaying = 1;
-		osd_display_error_dataslot(temp);
+		// main.cpp draws it, once, and leaves it up. Drawn here, the trace's next
+		// stage and the main loop's osd_display_info took it straight down again.
+		file_error_enabled = 1;
+		file_error_code = temp;
 		cue.state = CD_STATE_NODISC;
 	}
 	need_reset = 0;

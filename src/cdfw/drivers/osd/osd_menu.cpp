@@ -32,11 +32,9 @@ uint8_t nstore2;
 uint8_t nstore3;
 uint8_t frame_counter = 0;
 
-// 2 Nov 2026: every disc stops at the system card's Run screen, and only the
-// Pocket can show why. On for every run until that is found; after it, back to being
-// the CD Debug setting's alone (AFP_REGISTOR(2) == 1).
-#define DRIVE_TRACE_ALWAYS 1
-#define DEBUG_OVERLAY_ON (DRIVE_TRACE_ALWAYS || (AFP_REGISTOR(2) == 1))
+// The trace is the CD Debug setting's. Forced on while every disc stopped at the
+// Run screen (2 Nov 2026); docs/PLAN.md says how to read it.
+#define DEBUG_OVERLAY_ON (AFP_REGISTOR(2) == 1)
 
 drive_trace_t drive_trace = { 'w' };
 static uint32_t beat = 0;   // keeps counting while the firmware is alive
