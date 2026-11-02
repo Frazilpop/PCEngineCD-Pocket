@@ -43,10 +43,13 @@ static uint32_t cue_size;
 static char cue_dir[CUE_PATH_MAX]; // folder of the CUE, ending in '/'
 static char bin_dir[CUE_PATH_MAX]; // folder of the files it names, ending in '/'
 static char path[CUE_PATH_MAX];
+static uint32_t cue_read_error; // what a read of the CUE failed with
 
 // Reads the next CUE line into out without its CR/LF. Returns 0 only at the end
 // of the CUE: a blank line is a line (it ended Ys IV's CUE at its second line,
-// so the disc had no tracks).
+// so the disc had no tracks). A read that fails ends the CUE too: going round
+// for the next line would ask for the same chunk for ever, with the drive never
+// answering the console, which waits at the system card's JUST A MOMENT.
 static int sgets(char *out, int sz)
 {
 	const char *chunk = (const char *)(MAIN_SCRACH_ADDRESS_OFFSET + memory_offset_cue);
@@ -56,9 +59,14 @@ static int sgets(char *out, int sz)
 	while (cue_offset < cue_size)
 	{
 		uint32_t i = cue_offset % CUE_CHUNK_SIZE;
-		if ((i == 0) && dataslot_read(100, APF_SCRACH_ADDRESS_OFFSET + memory_offset_cue, cue_offset,
-				(cue_size - cue_offset < CUE_CHUNK_SIZE) ? cue_size - cue_offset : CUE_CHUNK_SIZE))
-			break;
+		if (i == 0) {
+			cue_read_error = dataslot_read(100, APF_SCRACH_ADDRESS_OFFSET + memory_offset_cue, cue_offset,
+				(cue_size - cue_offset < CUE_CHUNK_SIZE) ? cue_size - cue_offset : CUE_CHUNK_SIZE);
+			if (cue_read_error) {
+				cue_offset = cue_size;
+				break;
+			}
+		}
 		char c = chunk[i];
 		if (c == 0) {
 			cue_offset = cue_size; // a NUL ends the CUE
@@ -203,6 +211,7 @@ uint16_t cue_t::LoadCUE(int dataslot) {
 	// First we get the Cue File
 	aft.aft_dataslot = 100;
 	GetFileNameDataSlot(&aft);
+	osd_trace_stage('n');
 	toc_size = DATASLOT_BRAM(1); // This is where the Cue file will be The BINs are in the 101 dataslot
 	if (toc_size == 0) return 100;
 	clearscrachram(0,16384);
@@ -211,6 +220,7 @@ uint16_t cue_t::LoadCUE(int dataslot) {
 	bin_dir[0] = 0;
 	cue_offset = 0;
 	cue_size = toc_size;
+	cue_read_error = 0;
 	aft.aft_dataslot = dataslot;
 	// Where a track is on the disc and where it is in its file are two things.
 	// A disc address (LBA) counts the frames of every file so far and every
@@ -238,9 +248,11 @@ uint16_t cue_t::LoadCUE(int dataslot) {
 		if (!(memcmp(lptr, "FILE", 4)))
 		{
 			if (!file_arg(lptr + 4, s, sizeof(s))) return -1;
+			if (!this->toc.last) osd_trace_stage('o');
 			if (open_cue_file(s, this->toc.tracks[this->toc.last].name, sizeof(this->toc.tracks[0].name))) {
 				return 1;
 				}
+			if (!this->toc.last) osd_trace_stage('p');
 			if (!strstr(lptr, "BINARY") && !strstr(lptr, "MOTOROLA") && !strstr(lptr, "WAVE"))
 			{
 				return -1;
@@ -336,6 +348,8 @@ uint16_t cue_t::LoadCUE(int dataslot) {
 			if (this->toc.last == 99) break;
 		}
 	}
+
+	if (cue_read_error) return 200 + cue_read_error;	// 200 and up in the error box: the Pocket's code for the read
 
 	if (this->toc.last) EndTrack(this->toc.last - 1);
 

@@ -47,7 +47,7 @@ void osd_display_error_apf(){
 
 void osd_display_info(){
   if ((error_system == 0) && DEBUG_OVERLAY_ON){
-    sprintf (s, "Delay: %d", timer_wait_value);
+    sprintf (s, "Delay: %d E:%d", timer_wait_value, drive_trace.bios_error);
     OsdWrite(s);
     OsdUpdate(1);
     OsdClear();

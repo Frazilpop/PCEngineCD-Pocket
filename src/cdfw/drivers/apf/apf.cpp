@@ -86,6 +86,22 @@ bool dataslot_updated()
     return(DATASLOT_UPDATE_REG(0));
 }
 
+// What a command just written to the control reg came to. Until the bridge takes
+// it, DONE and the error bits are still the last command's, so an error read then
+// is another command's, and the error bits are only this one's once DONE is up.
+// ACK is up only while the command runs, so it isn't waited for: a wait for it
+// never ends if the command is over by the time it looks. core_bridge_cmd.v.
+static uint32_t dataslot_result()
+{
+  int apf_codes;
+  riscusleep(100);
+  do
+  {
+    apf_codes = READ_TARGET_DATASLOT_CONTROL(0);
+  } while (!(apf_codes & APF_DONE));
+  return (apf_codes & APF_ERROR);
+}
+
 // This will send the read command to the APF
 // The WRITE_* are the regs in the core for the location of the dataslow wanted to be read
 // This is used for block data with no pointer changes
@@ -100,33 +116,14 @@ uint32_t dataslot_read(uint16_t dataslot, uint32_t address, uint32_t offset, uin
   WRITE_TARGET_DATASLOT_OFFSET(0) = offset;
   WRITE_TARGET_DATASLOT_CONTROL(0) = TARGET_DATASLOT_READ_REG;
   mainprintf("APF read: %d, %0.4x, %0.4x, %d\r\n", dataslot, WRITE_TARGET_DATASLOT_BRIDGE_ADD(0), offset, length);
-  int apf_codes;
-  int i = 0;
-  do
+  uint32_t error = dataslot_result();
+  if (error)
   {
-    apf_codes = READ_TARGET_DATASLOT_CONTROL(0);
-    if ((apf_codes & APF_ERROR) > 0)
-    {
-      mainprintf("\033[36;5;4mAPF FAILD dataslot_read check? dataslot %d, address %0.4X, offset%0.4X, length%0.4X error %0.4X \033[0m\r\n", dataslot, address, offset, length, apf_codes);
-      file_error_enabled = 1;
-      file_error_code = error_info_dataslot_Load_Faild;
-      return (apf_codes & APF_ERROR);
-    }
-    i++;
-  } while (!(apf_codes & APF_ACK) | (i <= 1000));
-
-	do
-	{
-		apf_codes = READ_TARGET_DATASLOT_CONTROL(0);
-    if ((apf_codes & APF_ERROR) > 0)
-		{
-			mainprintf("\033[36;5;4mAPF FAILD dataslot_read done? dataslot %d, address %0.4X, offset %0.4X, length %0.4X error %0.4X\033[0m\r\n", dataslot, address, offset, length, apf_codes);
-			
-      file_error_enabled = 1;
-      file_error_code = error_info_dataslot_Load_Faild;
-      return (apf_codes & APF_ERROR);
-		}
-	} while (!(apf_codes & APF_DONE));
+    mainprintf("\033[36;5;4mAPF FAILD dataslot_read done? dataslot %d, address %0.4X, offset %0.4X, length %0.4X error %0.4X\033[0m\r\n", dataslot, address, offset, length, error);
+    file_error_enabled = 1;
+    file_error_code = error_info_dataslot_Load_Faild;
+    return error;
+  }
   mainprintf("\033[38;1;5mdone\033[0m\r\n");
   return(0);
 }
@@ -347,20 +344,15 @@ int GetFileNameDataSlot (dataslot_type *aft){
   WRITE_TARGET_DATASLOT_BRIDGE_ADD(0) = APF_SCRACH_ADDRESS_OFFSET;
   WRITE_TARGET_DATASLOT_OFFSET(0) = APF_SCRACH_ADDRESS_OFFSET;
   WRITE_TARGET_DATASLOT_CONTROL(0) = TARGET_DATASLOT_GET_FILENAME_REG;
-  uint32_t apf_codes;
-  do
-	{
-		apf_codes = WRITE_TARGET_DATASLOT_CONTROL(0);
-    if ((apf_codes & APF_ERROR) > 0)
-		{
-      file_error_enabled = 1;
-      file_error_code = error_info_dataslot_File_Not_Found;
-			mainprintf("\033[36;5;4mAPF FAILD File Name Dataslot? length%0.4X\033[0m\r\n", apf_codes & APF_ERROR);
-      // error_dataslot = aft_dataslot;
-			return (apf_codes & APF_ERROR);
-		}
-    // minimig_input_update();
-	} while (!(apf_codes & APF_DONE));
+  uint32_t error = dataslot_result();
+  if (error)
+  {
+    file_error_enabled = 1;
+    file_error_code = error_info_dataslot_File_Not_Found;
+    mainprintf("\033[36;5;4mAPF FAILD File Name Dataslot? length%0.4X\033[0m\r\n", error);
+    // error_dataslot = aft_dataslot;
+    return error;
+  }
 
   aft->aft_op_filesize  =  dataslot_size(aft->aft_dataslot);
   aft->aft_op_flags     =  SCRACH_RAMBUFFER(260);
@@ -413,20 +405,14 @@ int OpenFileNameDataSlot (dataslot_type *aft, const char *s){
     strcpy(data, s);
     dataslot_pathname_file_decode(aft);
 
-    uint32_t apf_codes;
-    do
+    uint32_t error = dataslot_result();
+    if (error)
     {
-      apf_codes = WRITE_TARGET_DATASLOT_CONTROL(0);
-      if ((apf_codes & APF_ERROR) > 0)
-      {
-      // mainprintf("\033[36;5;4mAPF FAILD dataslot_write_lba? length%0.4X\033[0m\r\n", length);
-        file_error_enabled = 1;
-        file_error_code = error_info_dataslot_File_Not_Found;
-        return (apf_codes & APF_ERROR);
-      }
-    // minimig_input_update();
-    } while (!(apf_codes & APF_DONE));
- 
+      file_error_enabled = 1;
+      file_error_code = error_info_dataslot_File_Not_Found;
+      return error;
+    }
+
     aft->aft_op_filesize  =  dataslot_size(aft->aft_dataslot);
     aft->aft_op_flags     =  SCRACH_RAMBUFFER(260);
     mainprintf("Directory %s \r\n File name %s \r\n more information %0.8x %0.8x\r\n",aft->aft_filepath, aft->aft_filename, aft->aft_op_flags, aft->aft_op_filesize);

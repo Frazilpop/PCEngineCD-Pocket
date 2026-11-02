@@ -23,6 +23,7 @@ static std::string cue_path, cue_text;
 static std::map<std::string, uint32_t> sd_card;	// path -> size
 static std::vector<std::string> opens;			// every OpenFileNameDataSlot path
 static int cue_reads;
+static int fake_read_error;	// what every read of the CUE answers, 0 for none
 static bool overflow;	// something the real hardware could not take
 
 // The split dataslot_pathname_file_decode() in apf.cpp does.
@@ -59,6 +60,14 @@ uint32_t dataslot_read(uint16_t slot, uint32_t address, uint32_t offset, uint32_
 {
 	uint32_t at = address - APF_SCRACH_ADDRESS_OFFSET;
 	cue_reads++;
+	if (fake_read_error) {
+		// a loader that keeps asking never ends: 0.3.0 and 0.4.0 on the Pocket
+		if (cue_reads > 1000) {
+			fprintf(stderr, "test_cue.cpp: the CUE was read %d times after an error\n", cue_reads);
+			exit(1);
+		}
+		return fake_read_error;
+	}
 	if ((slot != 100) || (at + length > sizeof(fake_scratch)) || (offset + length > cue_text.size())) {
 		overflow = true;
 		return 1;
@@ -75,6 +84,7 @@ void HPS_DisableIO() {}
 uint16_t spi_w(uint16_t) { return 0; }
 uint16_t HPS_spi_uio_cmd_cont(uint16_t) { return 0; }
 void osd_display_timing(uint8_t, uint8_t, uint8_t) {}
+void osd_trace_stage(char) {}
 int mainprintf(const char *, ...) { return 0; }
 int get_cd_seek_ms(int, int) { return 0; }
 
@@ -438,6 +448,18 @@ static void test_chunk_boundary()
 	CHECK(bad == 0);
 }
 
+// A read of the CUE that fails ends the load with the code in the error box's
+// number, and the disc isn't mounted: it used to ask again for ever.
+static void test_read_error()
+{
+	fake_read_error = 3;
+	result r = load(common + "_Cues/Japan/" + game + ".cue", redump_cue("../../_Games/052 De-Ja/", 5));
+	fake_read_error = 0;
+	CHECK(r.ret == 203);
+	CHECK(cue_reads == 1);
+	CHECK(r.toc.last == 0);
+}
+
 int main()
 {
 	test_resolve();
@@ -449,6 +471,7 @@ int main()
 	test_relative_paths();
 	test_fallback();
 	test_errors();
+	test_read_error();
 	test_big_cue();
 	test_chunk_boundary();
 	printf("%s: %d of %d checks failed\n", failures ? "FAILED" : "OK", failures, checks);

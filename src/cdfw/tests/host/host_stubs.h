@@ -28,6 +28,7 @@ void HPS_DisableIO();
 uint16_t spi_w(uint16_t word);
 uint16_t HPS_spi_uio_cmd_cont(uint16_t cmd);
 void osd_display_timing(uint8_t n1, uint8_t n2, uint8_t n3);
+void osd_trace_stage(char stage);
 int mainprintf(const char *format, ...);
 
 // Use the firmware's own sscanf (lib/sscanf.c, built as fw_sscanf).

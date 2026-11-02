@@ -42,13 +42,14 @@ void osd_display_error_apf(uint32_t error_code);
 
 // How far the drive has got, drawn over the picture (osd_menu.cpp).
 typedef struct {
-  char stage;           // w waiting for the first reset, s reading the system card, c reading the CUE, r ready, f failed
+  char stage;           // w waiting for the first reset, s reading the system card, c asking the CUE's name, n reading the CUE, o opening its first file, p the rest of it, r ready, f failed
   uint32_t resets;      // resets of the drive asked for
   uint32_t commands;    // commands from the console
   uint32_t data_ends;   // sectors the console has taken
   uint8_t last[6];      // the last command's first bytes
   uint32_t bios_size;   // the system card's size in the slot table
   bool bios_us;
+  uint32_t bios_error;  // what reading the system card from the slot answered
 } drive_trace_t;
 extern drive_trace_t drive_trace;
 void osd_trace_stage(char stage);

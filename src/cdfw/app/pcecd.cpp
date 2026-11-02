@@ -30,7 +30,8 @@ static bool bios_is_us()
 	for (uint32_t at = 0; (at < size) && !found; at += 0x3C00)
 	{
 		uint32_t len = (size - at < 0x3E00) ? size - at : 0x3E00;
-		if (dataslot_read(1, APF_SCRACH_ADDRESS_OFFSET + 0x200, at, len)) break;
+		drive_trace.bios_error = dataslot_read(1, APF_SCRACH_ADDRESS_OFFSET + 0x200, at, len);
+		if (drive_trace.bios_error) break;
 		for (uint32_t i = 0; (i + 8 <= len) && !found; i++)
 		{
 			found = !memcmp(chunk + i, "ALL DATA", 8);
