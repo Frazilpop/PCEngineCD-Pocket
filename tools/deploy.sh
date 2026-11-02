@@ -57,8 +57,15 @@ if [ $STATUS = 1 ]; then
 		[ -f "$f" ] && last=$(sha "$f") || last=none
 		echo "         (checked on the mounted card, $VOL: ${last:0:12})"
 	fi
-	if [ "$last" = "$s" ]; then echo "UP TO DATE - the card has the current build"
-	else echo "NOT ON THE CARD - the current build has not been deployed: tools/deploy.sh"; exit 1; fi
+	# the firmware goes on with the bitstream and isn't in it, so a firmware-only
+	# change leaves the bitstream's hash as it was
+	fw=$(sha "$FW")
+	lastfw=$(sed -n 's/^firmware //p' "$RECORD" 2>/dev/null || true)
+	if [ -n "$VOL" ] && [ -f "$VOL/Assets/pcecd/$CORE/pce_mpu_bios.bin" ]; then lastfw=$(sha "$VOL/Assets/pcecd/$CORE/pce_mpu_bios.bin"); fi
+	echo "Firmware: this one ${fw:0:12}, on the card ${lastfw:0:12}"
+	if [ "$last" != "$s" ]; then echo "NOT ON THE CARD - the current build has not been deployed: tools/deploy.sh"; exit 1; fi
+	if [ "$lastfw" != "$fw" ]; then echo "NOT ON THE CARD - the current firmware has not been deployed: tools/deploy.sh"; exit 1; fi
+	echo "UP TO DATE - the card has the current build and firmware"
 	exit 0
 fi
 
