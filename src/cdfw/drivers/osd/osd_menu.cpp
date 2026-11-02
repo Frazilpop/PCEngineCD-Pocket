@@ -32,12 +32,21 @@ uint8_t nstore2;
 uint8_t nstore3;
 uint8_t frame_counter = 0;
 
+// 2 Nov 2026: every disc stops at the system card's Run screen, and only the
+// Pocket can show why. On for every run until that is found; after it, back to being
+// the CD Debug setting's alone (AFP_REGISTOR(2) == 1).
+#define DRIVE_TRACE_ALWAYS 1
+#define DEBUG_OVERLAY_ON (DRIVE_TRACE_ALWAYS || (AFP_REGISTOR(2) == 1))
+
+drive_trace_t drive_trace = { 'w' };
+static uint32_t beat = 0;   // keeps counting while the firmware is alive
+
 void osd_display_error_apf(){
   
 };
 
 void osd_display_info(){
-  if ((error_system == 0) && (AFP_REGISTOR(2) == 1)){
+  if ((error_system == 0) && DEBUG_OVERLAY_ON){
     sprintf (s, "Delay: %d", timer_wait_value);
     OsdWrite(s);
     OsdUpdate(1);
@@ -46,13 +55,26 @@ void osd_display_info(){
     OsdWrite(s);
     OsdUpdate(0);
     OsdClear();
+    beat++;
+    sprintf (s, "S:%c R:%d T:%d K:%d %c B:%d", drive_trace.stage, drive_trace.resets, cue.TrackCount(), drive_trace.bios_size / 1024, drive_trace.bios_us ? 'U' : 'J', beat);
+    OsdWrite(s);
+    OsdUpdate(2);
+    OsdClear();
+    sprintf (s, "C:%d %02X %02X %02X %02X %02X %02X", drive_trace.commands, drive_trace.last[0], drive_trace.last[1], drive_trace.last[2], drive_trace.last[3], drive_trace.last[4], drive_trace.last[5]);
+    OsdWrite(s);
+    OsdUpdate(3);
+    OsdClear();
+    sprintf (s, "L:%d M:%d A:%d D:%d", cue.CurrentLBA(), (int)cue.state, (int)cue.latency, drive_trace.data_ends);
+    OsdWrite(s);
+    OsdUpdate(4);
+    OsdClear();
     if (frame_counter != 0) {
-      InfoEnable(10, 10, 16, 2, 291, 31744); // Had to use the info as some of the PCE outputs are smaller
+      InfoEnable(10, 10, 30, 5, 291, 31744); // Had to use the info as some of the PCE outputs are smaller
       timer_wait_hold  = RISCGetTimer2(200);
       frame_counter = frame_counter - 1;
     }
     else {
-      InfoEnable(10, 10, 16, 2, 291, 65535); // Had to use the info as some of the PCE outputs are smaller
+      InfoEnable(10, 10, 30, 5, 291, 65535); // Had to use the info as some of the PCE outputs are smaller
       timer_wait_value = 0;
     }
   }
@@ -61,15 +83,21 @@ void osd_display_info(){
   }
 }
 
+// Drawn at once: if the next step hangs, the screen still says which step it was.
+void osd_trace_stage(char stage){
+  drive_trace.stage = stage;
+  osd_display_info();
+}
+
 void osd_display_info_update(int timer_wait){
-  if ((error_system == 0) && (AFP_REGISTOR(2) == 1)){
+  if ((error_system == 0) && DEBUG_OVERLAY_ON){
       timer_wait_value = timer_wait_value + timer_wait;
       if (timer_wait > 0) frame_counter = 2;
   }
 }
 
 void osd_display_timing (uint8_t n1, uint8_t n2, uint8_t n3){
-  if ((error_system == 0) && (AFP_REGISTOR(2) == 1)){
+  if ((error_system == 0) && DEBUG_OVERLAY_ON){
     nstore1 = n1;
     nstore2 = n2;
     nstore3 = n3;

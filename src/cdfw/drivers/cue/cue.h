@@ -143,6 +143,8 @@ public:
 	void SendDataRequest();
 	void SetRegion(uint8_t rgn);
 	void SetFastSeek(bool fast);
+	int TrackCount() { return toc.last; }
+	int CurrentLBA() { return lba; }
 
 private:
 	toc_t toc;

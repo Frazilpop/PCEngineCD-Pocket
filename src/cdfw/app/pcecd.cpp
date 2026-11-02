@@ -57,9 +57,14 @@ void pcecd_poll()
 		// as on MiSTer. A game resetting the drive used to throw the TOC away and read
 		// the whole CUE again, every file of it, with the game waiting on the drive.
 		if (!cue.loaded) {
+			drive_trace.bios_size = dataslot_size(1);
+			osd_trace_stage('s');
 			bios_us = bios_is_us();
+			drive_trace.bios_us = bios_us;
+			osd_trace_stage('c');
 			cue.Reset();
 			pcecd_set_image(DATASLOT_BRAM(0), DATASLOT_BRAM(1));
+			osd_trace_stage(cue.loaded ? 'r' : 'f');
 		}
 		else {
 			cue.Reset();
@@ -109,6 +114,8 @@ void pcecd_poll()
 		switch (data_in[6] & 0xFF)
 		{
 		case 0:
+			drive_trace.commands++;
+			memcpy(drive_trace.last, data_in, sizeof(drive_trace.last));
 			cue.SetCommand((uint8_t*)data_in);
 			cue.CommandExec();
 			has_command = 1;
@@ -120,10 +127,12 @@ void pcecd_poll()
 			break;
 
 		case 2:
+			drive_trace.data_ends++;
 			cue.can_read_next = true;
 			break;
 
 		default:
+			drive_trace.resets++;
 			need_reset = 1;
 			break;
 		}
