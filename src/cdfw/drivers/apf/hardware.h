@@ -58,6 +58,7 @@ extern dataslot_type aft;
 
 extern bool file_error_enabled;
 extern int file_error_code;
+extern uint32_t dataslot_open_error;
 
 /*********************************
  * 

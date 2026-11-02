@@ -303,6 +303,7 @@ uint32_t dataslot_write_lba(uint32_t length, bool update_address)
 
 dataslot_type aft;
 char data [255];
+uint32_t dataslot_open_error; // what the Pocket answered the last open of a file; the error box shows it
 
 void dataslot_pathname_file_decode(dataslot_type *aft){
   int L = strlen(data);
@@ -406,6 +407,7 @@ int OpenFileNameDataSlot (dataslot_type *aft, const char *s){
     dataslot_pathname_file_decode(aft);
 
     uint32_t error = dataslot_result();
+    dataslot_open_error = error;
     if (error)
     {
       file_error_enabled = 1;

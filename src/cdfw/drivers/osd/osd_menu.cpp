@@ -166,18 +166,20 @@ void osd_display_error_dataslot (int data_error){
     OsdWrite("         Directory");
     OsdUpdate(5);
 
+    // Each line is a space and 28 characters, so the next starts at 28. It started at
+    // 29 and lost a letter a line: R-Type's "(Track 02)" read "(rack 02)".
     OsdClear();
     snprintf (s, 30," %s", aft.aft_filepath);
     OsdWrite(s);
     OsdUpdate(6);
     
     OsdClear();
-    snprintf (s, 30," %s", aft.aft_filepath + 29);
+    snprintf (s, 30," %s", aft.aft_filepath + 28);
     OsdWrite(s);
     OsdUpdate(8);
 
     OsdClear();
-    snprintf (s, 30," %s", aft.aft_filepath + 58);
+    snprintf (s, 30," %s", aft.aft_filepath + 56);
     OsdWrite(s);
     OsdUpdate(9);
 
@@ -191,17 +193,21 @@ void osd_display_error_dataslot (int data_error){
     OsdUpdate(11);
     
     OsdClear();
-    snprintf (s, 30," %s", aft.aft_filename + 29);
+    snprintf (s, 30," %s", aft.aft_filename + 28);
     OsdWrite(s);
     OsdUpdate(12);
 
     OsdClear();
-    snprintf (s, 30," %s", aft.aft_filename + 58);
+    snprintf (s, 30," %s", aft.aft_filename + 56);
     OsdWrite(s);
     OsdUpdate(13);
 
+    // Error 2 has three causes: the Pocket refused the file (its answer is not 0), or
+    // the CUE's files are in two folders, or a name is too long (answer 0). The tracks
+    // say when: all of them, it failed in play; fewer, it failed loading the CUE.
     OsdClear();
-    OsdWrite("------------------------------");
+    snprintf (s, 30,"Tracks %d, Pocket's answer %d", cue.TrackCount(), dataslot_open_error);
+    OsdWrite(s);
     OsdUpdate(14);
     OsdClear();
     InfoEnable(10, 80, 30, 15, 192, 65535); // Had to use the info as some of the PCE outputs are smaller
