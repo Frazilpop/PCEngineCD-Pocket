@@ -1,7 +1,8 @@
 
 #include "cue.h"
 
-int get_cd_seek_ms(int start_sector, int target_sector);
+int get_cd_seek_cms(int start_sector, int target_sector);
+#define SEEK_TICK_CMS 1333	// a drive tick is 13.33 ms; MiSTer's sum is ms / 13.33
 
 #define CD_DATA_IO_INDEX 2
 cue_t cue;
@@ -249,8 +250,10 @@ uint16_t cue_t::LoadCUE(int dataslot) {
 		{
 			if (!file_arg(lptr + 4, s, sizeof(s))) return -1;
 			if (!this->toc.last) osd_trace_stage('o');
+			// a file that won't open is no disc, as on MiSTer. This was 1, success, so the
+			// drive went on to answer with the tracks so far.
 			if (open_cue_file(s, this->toc.tracks[this->toc.last].name, sizeof(this->toc.tracks[0].name))) {
-				return 1;
+				return 2;
 				}
 			if (!this->toc.last) osd_trace_stage('p');
 			if (!strstr(lptr, "BINARY") && !strstr(lptr, "MOTOROLA") && !strstr(lptr, "WAVE"))
@@ -297,8 +300,10 @@ uint16_t cue_t::LoadCUE(int dataslot) {
 			}
 			else if (strstr(lptr, "CDG"))
 			{
+				// To the console it's an audio track, in the TOC and in play. The 96 bytes
+				// after each sector's 2352 are its subcode, which isn't sent yet.
 				track->sector_size = 2448;
-				track->type = 2;
+				track->type = 0;
 			}
 			pending = 0;
 			index0 = -1;
@@ -351,7 +356,11 @@ uint16_t cue_t::LoadCUE(int dataslot) {
 
 	if (cue_read_error) return 200 + cue_read_error;	// 200 and up in the error box: the Pocket's code for the read
 
-	if (this->toc.last) EndTrack(this->toc.last - 1);
+	if (!this->toc.last) return 101;	// no tracks is no disc, as on MiSTer
+	EndTrack(this->toc.last - 1);
+	// The address after the last track, as MiSTer's Load sets: the lead-out, which a
+	// game can ask for as one track past the last.
+	this->toc.tracks[this->toc.last].start = this->toc.end;
 
 	for (int i = 0; i < this->toc.last; i++)
 	{
@@ -365,6 +374,7 @@ uint16_t cue_t::Load(int dataslot)
 {
 	// Unload();
 	uint16_t temp = LoadCUE(dataslot);
+	this->tracks_read = this->toc.last;
 	if (temp){
 		this->loaded = 1;
 		return temp;
@@ -431,6 +441,30 @@ void cue_t::Reset() {
 void cue_t::Update() {
 	msf_t msf;
 	bool subq_send = false;
+	static uint8_t buf[12];
+
+	// READ SUBQ answers with where the drive was before this tick, as MiSTer's does
+	if (this->subq_pend)
+	{
+		int lba_rel = this->lba - this->toc.tracks[this->index].start;
+
+		buf[0] = 0x0A;
+		buf[1] = 0 | 0x80;
+		buf[2] = this->state == CD_STATE_PAUSE ? 2 : (this->state == CD_STATE_PLAY ? 0 : 3);
+		buf[3] = 0;
+		buf[4] = BCD(this->index + 1);	// Track
+		buf[5] = 1;	// Pregap = index 0, TOC points to index 1; very few audio discs have more indexes
+
+		LBAToMSF(lba_rel, &msf);
+		buf[6] = BCD(msf.m);
+		buf[7] = BCD(msf.s);
+		buf[8] = BCD(msf.f);
+
+		LBAToMSF(this->lba + 150, &msf);
+		buf[9] = BCD(msf.m);
+		buf[10] = BCD(msf.s);
+		buf[11] = BCD(msf.f);
+	}
 
 	if (this->state == CD_STATE_READ)
 	{
@@ -497,12 +531,7 @@ void cue_t::Update() {
 
 		for (int i = 0; i <= this->CDDAFirst; i++)
 		{
-			if (this->toc.tracks[this->index].type == 2)
-			{
-				RISCFileSeek(this->toc.tracks[this->index].name, FilePos(this->index, this->lba), this->toc.tracks[this->index].sector_size, this->index, &aft);
-				ReadCDG();
-			}
-			else if (this->toc.tracks[this->index].type == 0)
+			if (this->toc.tracks[this->index].type == 0)
 			{
 				if (this->lba < this->toc.tracks[this->index].first)
 				{
@@ -560,26 +589,6 @@ void cue_t::Update() {
 	// READ SUBQ is answered from here, on the drive's tick, as MiSTer's is
 	if (subq_send)
 	{
-		static uint8_t buf[12];
-		int lba_rel = this->lba - this->toc.tracks[this->index].start;
-
-		buf[0] = 0x0A;
-		buf[1] = 0 | 0x80;
-		buf[2] = this->state == CD_STATE_PAUSE ? 2 : (this->state == CD_STATE_PLAY ? 0 : 3);
-		buf[3] = 0;
-		buf[4] = BCD(this->index + 1);	// Track
-		buf[5] = 1;	// Pregap = index 0, TOC points to index 1; very few audio discs have more indexes
-
-		LBAToMSF(lba_rel, &msf);
-		buf[6] = BCD(msf.m);
-		buf[7] = BCD(msf.s);
-		buf[8] = BCD(msf.f);
-
-		LBAToMSF(this->lba + 150, &msf);
-		buf[9] = BCD(msf.m);
-		buf[10] = BCD(msf.s);
-		buf[11] = BCD(msf.f);
-
 		if (SendData)
 			SendData(buf, 10 + 2, CD_DATA_IO_INDEX);
 		SendStatus(MAKE_STATUS(CD_STATUS_GOOD, 0));
@@ -599,6 +608,11 @@ void cue_t::CommandExec() {
 	uint32_t temp_latency;
 
 	memset(buf, 0, 32);
+
+	// Any command ends the wait for a track's end. Without this, a play's interrupt
+	// still pending sends its status in the middle of a later command.
+	this->int_pend = false;
+
 	switch (comm[0]) {
 	case CD_COMM_TESTUNIT:
 		if (state == CD_STATE_NODISC) {
@@ -708,7 +722,7 @@ void cue_t::CommandExec() {
 		}
 		else
 		{
-			this->latency = (get_cd_seek_ms(this->lba, new_lba) * 3) / 40;	// in ticks of 13.33 ms
+			this->latency = get_cd_seek_cms(this->lba, new_lba) / SEEK_TICK_CMS;
 			this->audiodelay = 0;
 		}
 
@@ -764,7 +778,7 @@ void cue_t::CommandExec() {
 		}
 		else
 		{
-			temp_latency = (get_cd_seek_ms(this->lba, new_lba) * 3) / 40;	// in ticks of 13.33 ms
+			temp_latency = get_cd_seek_cms(this->lba, new_lba) / SEEK_TICK_CMS;
 			this->audiodelay = (220 * 3) / 40;
 
 			if (temp_latency > this->audiodelay)
@@ -939,13 +953,6 @@ void cue_t::ReadCDDA()
 	this->audioLength = 2352;
 	this->audioOffset = 0;// 2352;
 	RISCFileReadAdv(this->toc.tracks[this->index].dataslot,0x30,0x09,UIO_CD_DATA,2352);
-}
-
-void cue_t::ReadCDG()
-{
-	this->audioLength = 2448;
-	this->audioOffset = 0;// 2352;
-	RISCFileReadAdv(this->toc.tracks[this->index].dataslot,0x90,(0x09 | 0x80),UIO_CD_DATA,2448);
 }
 
 void cue_t::CommandError(uint8_t key, uint8_t asc, uint8_t ascq, uint8_t fru) {

@@ -75,7 +75,7 @@ uint16_t HPS_spi_uio_cmd_cont(uint16_t) { return 0; }
 void osd_display_timing(uint8_t, uint8_t, uint8_t) {}
 void osd_trace_stage(char) {}
 int mainprintf(const char *, ...) { return 0; }
-int get_cd_seek_ms(int, int) { return 0; }
+int get_cd_seek_cms(int, int) { return 0; }
 
 static std::string dir_of(const std::string &p) { return p.substr(0, p.rfind('/') + 1); }
 

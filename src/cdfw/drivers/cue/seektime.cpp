@@ -8,7 +8,9 @@
  ============================================================================
  */
 
-// CHanged to int as Floats are not active in the RISCV cpu
+// The RISC-V CPU has no floats, so this is MiSTer's sum in hundredths of a
+// millisecond, which keeps its fractions. MiSTer's get_cd_seek_ms is the reference:
+// test_seek in tests/host checks against values taken from it.
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,27 +22,26 @@ typedef struct sector_group {
 		int		sec_per_revolution;
 		int		sec_start;
 		int		sec_end;
-		int	rotation_ms;
-		int	rotation_vsync;
+		int		rotation_cms;
 } sector_group;
 
 #define NUM_SECTOR_GROUPS	14
 
-sector_group sector_list[NUM_SECTOR_GROUPS] = {
-	{ 10,	0,		12572,	133,	 8 },
-	{ 11,	12573,	30244,	146,	 8 },		// Except for the first and last groups,
-	{ 12,	30245,	49523,	161,	 9 },		// there are 1606.5 tracks in each range
-	{ 13,	49524,	70408,	174,	10 },
-	{ 14,	70409,	92900,	187,	11 },
-	{ 15,	92901,	116998,	201,	12 },
-	{ 16,	116999,	142703,	213,	12 },
-	{ 17,	142704,	170014,	226,	13 },
-	{ 18,	170015,	198932,	240,	14 },
-	{ 19,	198933,	229456,	253,	15 },
-	{ 20,	229457,	261587,	267,	16 },
-	{ 21,	261588,	295324,	281,	16 },
-	{ 22,	295325,	330668,	294,	17 },
-	{ 23,	330669,	333012,	307,	18 }
+static const sector_group sector_list[NUM_SECTOR_GROUPS] = {
+	{ 10,	0,		12572,	13347 },
+	{ 11,	12573,	30244,	14682 },		// Except for the first and last groups,
+	{ 12,	30245,	49523,	16017 },		// there are 1606.5 tracks in each range
+	{ 13,	49524,	70408,	17351 },
+	{ 14,	70409,	92900,	18686 },
+	{ 15,	92901,	116998,	20021 },
+	{ 16,	116999,	142703,	21356 },
+	{ 17,	142704,	170014,	22690 },
+	{ 18,	170015,	198932,	24025 },
+	{ 19,	198933,	229456,	25360 },
+	{ 20,	229457,	261587,	26695 },
+	{ 21,	261588,	295324,	28029 },
+	{ 22,	295325,	330668,	29364 },
+	{ 23,	330669,	333012,	30699 }
 };
 
 
@@ -60,17 +61,26 @@ static int find_group(int sector_num)
 	return group_index;
 }
 
-int get_cd_seek_ms(int start_sector, int target_sector)
+// How long a seek takes, in hundredths of a millisecond
+int get_cd_seek_cms(int start_sector, int target_sector)
 {
 	int start_index;
 	int target_index;
+	int rotation;
+	int track_difference;	// in hundredths of a track, as a group is 1606.48 tracks
+	int distance = abs(target_sector - start_sector);
 
-	int track_difference;
-	int milliseconds = 0;
+	// 360000 = number of sectors in an 80-minute CD (which weren't available).
+	// A game can ask for any address: READ6 takes 21 bits and an MSF can come out negative.
+	if ((start_sector > 360000) || (start_sector < 0) || (target_sector > 360000) || (target_sector < 0))
+	{
+		return 0;
+	}
 
 	// First, we identify which group the start and end are in
 	start_index = find_group(start_sector);
 	target_index = find_group(target_sector);
+	rotation = sector_list[target_index].rotation_cms;
 
 	// Now we find the track difference
 	//
@@ -78,49 +88,44 @@ int get_cd_seek_ms(int start_sector, int target_sector)
 	//
 	if (target_index == start_index)
 	{
-		track_difference = (int)(abs(target_sector - start_sector) / sector_list[target_index].sec_per_revolution);
+		track_difference = (distance / sector_list[target_index].sec_per_revolution) * 100;
 	}
 	else if (target_index > start_index)
 	{
-		track_difference = (sector_list[start_index].sec_end - start_sector) / sector_list[start_index].sec_per_revolution;
-		track_difference += (target_sector - sector_list[target_index].sec_start) / sector_list[target_index].sec_per_revolution;
-		track_difference += (1607 * (target_index - start_index - 1));
+		track_difference = ((sector_list[start_index].sec_end - start_sector) / sector_list[start_index].sec_per_revolution) * 100;
+		track_difference += ((target_sector - sector_list[target_index].sec_start) / sector_list[target_index].sec_per_revolution) * 100;
+		track_difference += 160648 * (target_index - start_index - 1);
 	}
 	else // start_index > target_index
 	{
-		track_difference = (start_sector - sector_list[start_index].sec_start) / sector_list[start_index].sec_per_revolution;
-		track_difference += (sector_list[target_index].sec_end - target_sector) / sector_list[target_index].sec_per_revolution;
-		track_difference += (1607 * (start_index - target_index - 1));
+		track_difference = ((start_sector - sector_list[start_index].sec_start) / sector_list[start_index].sec_per_revolution) * 100;
+		track_difference += ((sector_list[target_index].sec_end - target_sector) / sector_list[target_index].sec_per_revolution) * 100;
+		track_difference += 160648 * (start_index - target_index - 1);
 	}
 
-	// Now, we use the algorithm to determine how long to wait
-	if (abs(target_sector - start_sector) <= 3)
+	// Now, we use the algorithm to determine how long to wait. The whole
+	// milliseconds are MiSTer's, which come from integer sums: 2 * 1000 / 60 is 33.
+	if (distance <= 3)
 	{
-		milliseconds = (2 * 1000 / 60);
+		return 3300;
 	}
-	else if (abs(target_sector - start_sector) < 7)
+	else if (distance < 7)
 	{
-		milliseconds = (9 * 1000 / 60) + (int)(sector_list[target_index].rotation_ms);
+		return 15000 + rotation * 3 / 4;
 	}
-	else if (track_difference <= 80)
+	else if (track_difference <= 8000)
 	{
-		milliseconds = (17 * 1000 / 60) + (int)(sector_list[target_index].rotation_ms);
+		return 28300 + rotation * 3 / 4;
 	}
-	else if (track_difference <= 160)
+	else if (track_difference <= 16000)
 	{
-		milliseconds = (22 * 1000 / 60) + (int)(sector_list[target_index].rotation_ms);
+		return 36600 + rotation * 3 / 4;
 	}
-	else if (track_difference <= 644)
+	else if (track_difference <= 64400)
 	{
-		milliseconds = (22 * 1000 / 60) + (int)(sector_list[target_index].rotation_ms) + (int)((track_difference - 161) * 17 / 80);
+		// (tracks - 161) * 16.66 / 80, over 100 for the hundredths, and 100 back for the ms
+		return 36600 + rotation * 3 / 4 + (track_difference - 16100) * 833 / 4000;
 	}
-	else
-	{
-		milliseconds = (36 * 1000 / 60) + (int)(sector_list[target_index].rotation_ms) + (int)((track_difference - 644) * 17 / 195);
-	}
-
-	riscprintf("From sector %d to sector %d:\n", start_sector, target_sector);
-	riscprintf("Time = %d milliseconds\n", milliseconds);
-
-	return milliseconds;
+	// unsigned: past the last group is group 0, so this goes to 3.6 million * 833
+	return 60000 + rotation / 2 + (int)((uint32_t)(track_difference - 64400) * 833u / 9750u);
 }

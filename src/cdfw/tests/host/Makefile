@@ -6,7 +6,7 @@
 
 FW  := $(CURDIR)/../..
 LIB := $(FW)/lib/sscanf.c $(FW)/lib/vscanf.c $(FW)/lib/stropen.c
-SRC := test_cue.cpp host_stubs.h $(FW)/drivers/cue/cue.cpp
+SRC := test_cue.cpp host_stubs.h $(FW)/drivers/cue/cue.cpp $(FW)/drivers/cue/seektime.cpp
 SAN := -fsanitize=address,undefined -fno-sanitize-recover=all
 
 # $(call build,<dir>,<flags>)

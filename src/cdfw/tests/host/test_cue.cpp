@@ -9,6 +9,7 @@
 
 #define private public // to read the TOC
 #include "../../drivers/cue/cue.cpp"
+#include "../../drivers/cue/seektime.cpp"
 #undef private
 
 /* ---------------------------------------------------------------- fake APF */
@@ -82,11 +83,11 @@ uint32_t RISCFileReadAdv(int, uint8_t, uint8_t, uint8_t, uint32_t) { return 1; }
 void RISCSendZeros(uint8_t, uint8_t, uint8_t, uint32_t) {}
 void HPS_DisableIO() {}
 uint16_t spi_w(uint16_t) { return 0; }
-uint16_t HPS_spi_uio_cmd_cont(uint16_t) { return 0; }
+static int statuses;	// what SendStatus has sent
+uint16_t HPS_spi_uio_cmd_cont(uint16_t cmd) { if (cmd == UIO_CD_SET) statuses++; return 0; }
 void osd_display_timing(uint8_t, uint8_t, uint8_t) {}
 void osd_trace_stage(char) {}
 int mainprintf(const char *, ...) { return 0; }
-int get_cd_seek_ms(int, int) { return 0; }
 
 /* ----------------------------------------------------------------- helpers */
 
@@ -365,7 +366,7 @@ static void test_errors()
 	// missing bin: both places are tried, then the file error OSD
 	sd_card.clear();
 	result r = load(cues + game + ".cue", redump_cue("../../_Games/052 De-Ja/", 5));
-	CHECK(r.ret == 1);
+	CHECK(r.ret == 2);
 	CHECK(r.error == 2);
 	CHECK(opens == std::vector<std::string>({games + track_file(1), cues + track_file(1)}));
 
@@ -375,6 +376,7 @@ static void test_errors()
 	std::string cue = redump_cue("../../_Games/052 De-Ja/", 5);
 	cue.replace(cue.find("../../_Games/052 De-Ja/" + track_file(2)), 23, "../../Other/");
 	r = load(cues + game + ".cue", cue);
+	CHECK(r.ret == 2);
 	CHECK(r.error == 2);
 	CHECK(opens.size() == 2);
 
@@ -398,6 +400,7 @@ static void test_errors()
 	CHECK(opens == std::vector<std::string>({deep + track_file(1)}));
 }
 
+// (and tracks[99] holds the address after the 99th: toc_t has 100)
 // 99 tracks plus REM lines make a 40K CUE: three chunk reads, and the same TOC
 // as the same tracks in a small CUE. Tracks past 99 are ignored.
 static void test_big_cue()
@@ -460,6 +463,163 @@ static void test_read_error()
 	CHECK(r.toc.last == 0);
 }
 
+/* ------------------------------------------------- the drive, against MiSTer */
+
+static std::vector<uint8_t> sent;	// what the drive last sent the console as data
+static int capture(uint8_t *buf, int len, uint8_t)
+{
+	sent.assign(buf, buf + len);
+	return 1;
+}
+
+static void command(uint8_t c0, uint8_t c1 = 0, uint8_t c2 = 0, uint8_t c3 = 0, uint8_t c4 = 0, uint8_t c9 = 0)
+{
+	uint8_t c[14] = {c0, c1, c2, c3, c4, 0, 0, 0, 0, c9};
+	sent.clear();
+	statuses = 0;
+	cue.SetCommand(c);
+	cue.CommandExec();
+}
+
+// A disc of two audio tracks and a data track, loaded and ready.
+static void three_tracks()
+{
+	const std::string dir = common + "Three/";
+	sd_card.clear();
+	sd_card[dir + "three.bin"] = 2352 * 75 * 60 * 3;
+	result r = load(dir + "three.cue",
+		"FILE three.bin BINARY\n"
+		"  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n"
+		"  TRACK 02 AUDIO\n    INDEX 01 01:00:00\n"
+		"  TRACK 03 MODE1/2352\n    INDEX 01 02:00:00\n");
+	CHECK(r.ret == 1);
+	CHECK(r.toc.end == 13500);
+	cue.state = CD_STATE_IDLE;
+	cue.SendData = capture;
+}
+
+static int msf_frames(const uint8_t *p)
+{
+	return (U8(p[0]) * 60 + U8(p[1])) * 75 + U8(p[2]);
+}
+
+// The numbers are MiSTer's get_cd_seek_ms / 13.33, from its source at 7912f76,
+// on a compile of it beside the firmware's. A seek's rotation counted in whole here until
+// now, where MiSTer counts 3/4 or 1/2 of it, and the limits were missing.
+static void test_seek()
+{
+	static const int seeks[][3] = {
+		{0, 1, 2}, {0, 5, 18}, {0, 500, 28}, {0, 1500, 34}, {0, 5000, 40}, {0, 12000, 53}, {0, 30000, 64},
+		{100000, 20000, 86}, {0, 200000, 141}, {333000, 0, 178}, {0, 350000, 270}, {0, 360001, 0}, {-1, 100, 0},
+	};
+	for (const auto &s : seeks) CHECK(get_cd_seek_cms(s[0], s[1]) / SEEK_TICK_CMS == s[2]);
+}
+
+// One track past the last is the lead-out: it was address 0 here, so 00:02:00.
+static void test_leadout()
+{
+	three_tracks();
+	command(CD_COMM_GETDIRINFO, 2, 0x04);
+	CHECK(sent.size() == 6);
+	CHECK(sent.size() == 6 && msf_frames(&sent[2]) == 13500 + 150);
+	CHECK(sent.size() == 6 && sent[5] == 0);
+
+	// and the last track still says it is data
+	command(CD_COMM_GETDIRINFO, 2, 0x03);
+	CHECK(sent.size() == 6 && msf_frames(&sent[2]) == 9000 + 150);
+	CHECK(sent.size() == 6 && sent[5] == 4);
+}
+
+// Any command ends the wait for the end of a track, as on MiSTer. It didn't, so
+// the end of a track sent a status in the middle of whatever came next.
+static void test_interrupt_ends_with_a_command()
+{
+	three_tracks();
+	command(CD_COMM_SAPSP, CD_CDDAMODE_NORMAL, 0, 0, 0, 0);
+	command(CD_COMM_SAPEP, CD_CDDAMODE_INTERRUPT, 0, 0, 10, 0);
+	CHECK(cue.int_pend);
+	CHECK(statuses == 0);	// the status waits for the end of the track
+
+	command(CD_COMM_TESTUNIT);
+	CHECK(!cue.int_pend);
+	CHECK(statuses == 1);	// the test's own
+
+	statuses = 0;
+	cue.state = CD_STATE_PLAY;
+	cue.latency = cue.audiodelay = 0;
+	cue.lba = cue.CDDAEnd + 1;
+	cue.Update();
+	CHECK(cue.state == CD_STATE_IDLE);
+	CHECK(statuses == 0);
+
+	// left alone, it does send it
+	command(CD_COMM_SAPEP, CD_CDDAMODE_INTERRUPT, 0, 0, 10, 0);
+	cue.latency = cue.audiodelay = 0;
+	cue.lba = cue.CDDAEnd + 1;
+	cue.Update();
+	CHECK(statuses == 1);
+}
+
+// READ SUBQ says where the drive was before the tick that answers it.
+static void test_subq_before_the_tick()
+{
+	three_tracks();
+	cue.state = CD_STATE_PLAY;
+	cue.CDDAEnd = 4000;
+	cue.CDDAMode = CD_CDDAMODE_NORMAL;
+	cue.CDDAFirst = 0;
+	cue.latency = cue.audiodelay = 0;
+	cue.index = 0;
+	cue.lba = 100;
+	command(CD_COMM_READSUBQ);
+	CHECK(sent.empty());	// answered on the tick
+	cue.Update();
+	CHECK(cue.lba == 101);
+	CHECK(sent.size() == 12);
+	CHECK(sent.size() == 12 && sent[2] == 0);	// playing
+	CHECK(sent.size() == 12 && msf_frames(&sent[6]) == 100);
+	CHECK(sent.size() == 12 && msf_frames(&sent[9]) == 100 + 150);
+}
+
+// A file that won't open, or a CUE with no tracks, is no disc, as on MiSTer. The
+// error box still has to say how far it got, after pcecd_set_image's Unload.
+static void test_no_disc()
+{
+	const std::string dir = common + "Half/";
+	sd_card.clear();
+	sd_card[dir + "1.bin"] = 2352 * 100;
+	result r = load(dir + "half.cue",
+		"FILE 1.bin BINARY\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n"
+		"FILE 2.bin BINARY\n  TRACK 02 AUDIO\n    INDEX 01 00:00:00\n");
+	CHECK(r.ret == 2);
+	cue.Unload();
+	CHECK(cue.TrackCount() == 1);
+	CHECK(cue.toc.last == 0);
+
+	r = load(dir + "none.cue", "REM nothing here\n");
+	CHECK(r.ret == 101);
+	CHECK(cue.TrackCount() == 0);
+}
+
+// A CDG track is audio to the console. It was type 2, which the TOC reported as
+// neither, and its sectors went to the data path.
+static void test_cdg_is_audio()
+{
+	const std::string dir = common + "Karaoke/";
+	sd_card.clear();
+	sd_card[dir + "k.bin"] = 2448 * 75 * 60;
+	result r = load(dir + "k.cue", "FILE k.bin BINARY\n  TRACK 01 CDG\n    INDEX 01 00:00:00\n");
+	CHECK(r.ret == 1);
+	CHECK(r.toc.end == 75 * 60);
+	CHECK(r.toc.tracks[0].type == 0);
+	CHECK(r.toc.tracks[0].sector_size == 2448);
+	CHECK(cue.FilePos(0, 10) == 24480);
+	cue.state = CD_STATE_IDLE;
+	cue.SendData = capture;
+	command(CD_COMM_GETDIRINFO, 2, 0x01);
+	CHECK(sent.size() == 6 && sent[5] == 0);
+}
+
 int main()
 {
 	test_resolve();
@@ -474,6 +634,12 @@ int main()
 	test_read_error();
 	test_big_cue();
 	test_chunk_boundary();
+	test_seek();
+	test_leadout();
+	test_interrupt_ends_with_a_command();
+	test_subq_before_the_tick();
+	test_no_disc();
+	test_cdg_is_audio();
 	printf("%s: %d of %d checks failed\n", failures ? "FAILED" : "OK", failures, checks);
 	return failures != 0;
 }

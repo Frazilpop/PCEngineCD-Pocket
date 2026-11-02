@@ -101,7 +101,7 @@ typedef struct
 	int end=0; // Total size of CD rom
 	int last=0; // last track number
 	char cue_name[128];
-	cd_track_t tracks[99];
+	cd_track_t tracks[100];	// 99, and the address after the last, as MiSTer's
 	int GetTrackByLBA(int lba)
 	{
 		int i = 0;
@@ -129,6 +129,7 @@ public:
 	int has_status;
 	bool data_req;
 	bool can_read_next;
+	int tracks_read;
 
 	cue_t();
 	uint16_t Load(int dataslot);
@@ -143,7 +144,7 @@ public:
 	void SendDataRequest();
 	void SetRegion(uint8_t rgn);
 	void SetFastSeek(bool fast);
-	int TrackCount() { return toc.last; }
+	int TrackCount() { return tracks_read; }	// what the last load read, for the error box: Unload clears the TOC
 	int CurrentLBA() { return lba; }
 
 private:
@@ -178,7 +179,6 @@ private:
 	int SectorSend(uint8_t* header);
 	void ReadData();
 	void ReadCDDA();
-	void ReadCDG();
 	void LBAToMSF(int lba, msf_t* msf);
 	void MSFToLBA(int* lba, msf_t* msf);
 	void MSFToLBA(int* lba, uint8_t m, uint8_t s, uint8_t f);
