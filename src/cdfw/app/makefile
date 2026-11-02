@@ -1,5 +1,8 @@
 SRC_DIR      = ./
 EXTRA_CFLAGS = -c -I../ -I../api -march=rv32imac_zicsr -mabi=ilp32
+# Or GCC turns the loop in lib/memset.c into a call to memset, which is itself: the
+# first call never returns. tools/firmware.sh checks the build for this.
+EXTRA_CFLAGS += -fno-tree-loop-distribute-patterns
 
 # Drivers
 EXTRA_CFLAGS += -DCONFIG_IRQCTRL

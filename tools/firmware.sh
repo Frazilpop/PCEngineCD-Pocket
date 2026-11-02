@@ -30,7 +30,8 @@ fi
 
 run() { # <source folder>
     mkdir -p "$repo/build"
-    docker run --rm -v "$HOME":"$HOME" -w "$1" "$image" sh ./build.sh
+    # clean each time: make doesn't follow the makefile's flags or the linker script
+    docker run --rm -v "$HOME":"$HOME" -w "$1" "$image" sh -c 'sh ./build.sh clean && sh ./build.sh'
 }
 
 if [ "${1:-}" = "--check" ]; then
@@ -51,6 +52,16 @@ fi
 run "$repo/src/cdfw"
 bin=$repo/src/cdfw/app/build.riscv.pce_mpu_bios/pce_mpu_bios.bin
 elf=$repo/src/cdfw/app/build.riscv.pce_mpu_bios/pce_mpu_bios
+# lib/'s memset, memcpy and so on are loops. A compiler that makes one of those
+# loops a call to the function hangs the MPU at the first call, and make test
+# can't see it, as it runs on the Mac's own. 0.3.0 to 7533ff5 had this.
+lst=$repo/src/cdfw/app/build.riscv.pce_mpu_bios/pce_mpu_bios.lst
+self=$(awk '/^[0-9a-f]+ <.*>:$/ { fn = $2; sub(/:$/, "", fn) }
+            /\t(jal|j)\t/ && $NF == fn && fn !~ /_exit_loop/ { print fn }' "$lst" | sort -u)
+if [ -n "$self" ]; then
+    echo "== these call themselves, and shouldn't: $self"; exit 1
+fi
+
 cp "$bin" "$out"
 echo "== written: $out, $(wc -c < "$out") bytes"
 docker run --rm -v "$HOME":"$HOME" "$image" riscv64-unknown-elf-size "$elf"

@@ -43,9 +43,10 @@ SECTIONS
     *(.bss*)
     *(.sbss*)
     *(COMMON)
-    /* Allocate room for stack */
+    /* Allocate room for stack: the CUE load with the trace on is near 1K deep, and
+       going past the stack writes over the variables below it */
     .   =  ALIGN(8) ;
-    .   += 1024 ;
+    .   += 4096 ;
     _sp =  . - 16;
   } > RAM
 
