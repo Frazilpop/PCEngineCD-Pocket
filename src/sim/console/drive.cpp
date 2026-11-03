@@ -227,7 +227,7 @@ void osd_display_timing(uint8_t, uint8_t, uint8_t) {}
 void osd_trace_stage(char stage)
 {
 	drive_trace.stage = stage;
-	if (log_file) fprintf(log_file, "%ld %u stage %c\n", sim_frame(), RISCGetTimer2(0), stage);
+	if (log_file) { fprintf(log_file, "%ld %u stage %c\n", sim_frame(), RISCGetTimer2(0), stage); fflush(log_file); }
 }
 
 int mainprintf(const char *format, ...)
@@ -282,6 +282,7 @@ void drive_poll()
 		fprintf(log_file, "%ld %u command %u:", sim_frame(), RISCGetTimer2(0), commands);
 		for (int i = 0; i < 6; i++) fprintf(log_file, " %02x", drive_trace.last[i]);
 		fprintf(log_file, " resets %u state %d lba %d\n", resets, (int)cue.state, cue.CurrentLBA());
+		fflush(log_file);
 	}
 }
 

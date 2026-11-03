@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
 #include <zlib.h>
@@ -100,7 +101,9 @@ static void finish() {
   double s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
   FILE *fj = fopen((out_dir + "/run.json").c_str(), "w");
   if (fj) {
-    fprintf(fj, "{\"card\":\"%s\",\"disc\":\"%s\",\"frames\":%ld,\"saved\":%d,\"seconds\":%.1f,\"mhz\":%.2f,\"drive\":%s}\n",
+    // rom and region say which run this was
+    fprintf(fj, "{\"rom\":\"%s\",\"region\":\"%s\",\"card\":\"%s\",\"disc\":\"%s\",\"frames\":%ld,\"saved\":%d,\"seconds\":%.1f,\"mhz\":%.2f,\"drive\":%s}\n",
+            json_escape(disc_path.empty() ? card_path : disc_path).c_str(), strstr(drive, "\"region_us\":true") ? "USA" : "Japan",
             json_escape(card_path).c_str(), json_escape(disc_path).c_str(), nframe, saved, s, clocks / s / 1e6, drive);
     fclose(fj);
   }

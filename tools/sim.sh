@@ -1,7 +1,7 @@
 #!/bin/bash
 # The whole console in Verilator (src/sim/console): a system card and a disc in,
 # frames as PNGs and the sound as a WAV out, in build/sim_pce (src/sim/console/README.md).
-#   bash tools/sim.sh                                    the test card and test disc; checks what they report
+#   bash tools/sim.sh                                    the test card and test disc for 240 frames; checks what they report
 #   bash tools/sim.sh --card CARD --disc CUE [--frames N] [--every K] [--save F,F] [--press F:buttons[:N]] [--arcade]
 #   NO_BUILD=1 bash tools/sim.sh ...                     a run on the build there is
 # The build is kept in build/sim and made again only when a source changes.
@@ -101,6 +101,13 @@ echo "3 of 3 build steps"
 [ -n "${NO_BUILD:-}" ] || build
 
 rm -f "$OUT"/f_*.png "$OUT"/frames.txt "$OUT"/audio.wav "$OUT"/run.json "$OUT"/drive.log
+TEST=""
+if [ $# -eq 0 ]; then
+  TEST=1
+  mkdir -p "$B/test"
+  python3 -I tools/testcard.py "$B/test"
+  set -- --card "$B/test/card.pce" --disc "$B/test/Test Disc.cue" --frames 240 --every 30 --press 200:run:20
+fi
 # from where the build left the palette's hex (bram.sv reads it)
-cd "$B/gen"
-"$B/obj/Vsim_top" --out "$OUT" "$@"
+(cd "$B/gen" && "$B/obj/Vsim_top" --out "$OUT" "$@")
+[ -z "$TEST" ] || python3 -I src/sim/console/check_test.py "$OUT" "$B/gen/palette.hex"

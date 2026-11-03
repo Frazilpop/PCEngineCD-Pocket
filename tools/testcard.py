@@ -18,7 +18,7 @@ system card does and asks the drive what a game's boot does:
   from further down the disc, so a seek and the read cache's buffers come into it, each
   sector's bytes summed against the sum made here;
 - CD audio: track 2 plays (SAPSP, SAPEP) at 880 Hz left, 1320 Hz right, READ SUBQ follows
-  it; the PSG's channel 1 sounds at about 440 Hz throughout, so the WAV shows each by pitch;
+  it; the PSG's first channel sounds at about 440 Hz throughout, so the WAV shows each by pitch;
 - the pad: RUN appears at the bottom of the screen while Run is held.
 
 The backdrop turns green when every check has passed and stays red if one fails, so the
@@ -273,7 +273,7 @@ def build(total):
     a.dey(); a.bne('bat1')
     # the sprite table, at VRAM 0x7F00: sprite 0 in the bottom band, the rest off
     a.st0(0); a.st1(0x00); a.st2(0x7F); a.st0(2)
-    a.st1(0xC0 + 64); a.st2(0)                  # y
+    a.st1(0x00); a.st2(0x01)                    # y: 256, the screen's 192
     a.st1(32); a.st2(0)                         # x
     a.st1(0x00); a.st2(0x01)                    # pattern
     a.st1(0x80); a.st2(0x00)                    # attributes: over the background
