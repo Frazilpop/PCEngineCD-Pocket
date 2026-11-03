@@ -76,11 +76,6 @@ typedef struct
 	uint8_t fru;
 } sense_t;
 
-// typedef enum
-// {
-//         SUBCODE_NONE = 0, SUBCODE_RW, SUBCODE_RW_RAW
-// } cd_subcode_types_t;
-
 typedef struct
 {
 	int dataslot = 0;
@@ -93,7 +88,6 @@ typedef struct
 	int type = 0;
 	int sector_size = 0;
 	char name[128];
-	// cd_subcode_types_t sbc_type;
 } cd_track_t;
 
 typedef struct
@@ -176,6 +170,10 @@ private:
 	uint16_t LoadCUE(int dataslot);
 	void EndTrack(int i);
 	uint32_t FilePos(int i, int lba);
+	void OpenSubcode(const char *cue_name);
+	bool SubcodeFromFile(int lba, uint8_t *subc);
+	void ReadSubcode();
+	void SendSubcode();
 	int SectorSend(uint8_t* header);
 	void ReadData();
 	void ReadCDDA();

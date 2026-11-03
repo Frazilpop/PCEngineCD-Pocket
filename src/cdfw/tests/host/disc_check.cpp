@@ -9,7 +9,8 @@
 // failed: the sector is still where the file says). "PC Engine CD-ROM SYSTEM" in
 // the track's first two sectors is the check for both sector sizes. Every track
 // has to lie inside its file, and the disc's last frame has to be the file's last.
-// "old" is what 0.2.3's single-file sums would have read for that sector.
+// "old" is what 0.2.3's single-file sums would have read for that sector. A disc of
+// audio alone is noted, not failed: a CD+G disc is one, and the system card plays it.
 
 #include <dirent.h>
 #include <fcntl.h>
@@ -66,6 +67,10 @@ uint32_t dataslot_read(uint16_t slot, uint32_t address, uint32_t offset, uint32_
 }
 
 void clearscrachram(uint32_t offset, uint32_t size) { memset(fake_scratch + offset, 0, size); }
+uint32_t dataslot_open_error;
+bool dataslot_ready() { return true; }
+void RISCFileCacheSize(uint32_t) {}
+void RISCFileCopy(uint8_t *, uint32_t) {}
 uint32_t RISCFileSeek(const char *, uint32_t, uint32_t, uint32_t, dataslot_type *) { return 1; }
 uint32_t RISCFileReadAdv(int, uint8_t, uint8_t, uint8_t, uint32_t) { return 1; }
 void RISCSendZeros(uint8_t, uint8_t, uint8_t, uint32_t) {}
@@ -162,7 +167,8 @@ static void check_disc(const std::string &path)
 		if ((toc.tracks[0].name[0] && !strcmp(t.name, toc.tracks[0].name)) && toc.last > 1 && !strcmp(toc.tracks[1].name, toc.tracks[0].name) && old_pos != (uint32_t)t.offset) old_wrong++;
 	}
 	if (data_tracks && (ipl < 0)) problems += " no PC Engine IPL in any data track's first two sectors;";
-	if (!data_tracks) problems += " no data track;";
+	if (!data_tracks) notes += " audio only, as a CD+G disc is;";
+	if (sub_size) notes += (sub_size >= toc.end * 96) ? " has its .sub;" : " its .sub stops short of the disc;";
 	// the last frame of the last file is the disc's
 	if (toc.last) {
 		cd_track_t &t = toc.tracks[toc.last - 1];

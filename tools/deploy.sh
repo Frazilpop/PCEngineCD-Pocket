@@ -11,9 +11,15 @@
 # Pocket's own over USB.
 #
 # The games and the system cards are the card's own: every PC Engine CD core
-# reads Assets/pcecd/common, so nothing is copied there, and Mazamars312's core
-# stays as it was beside this one. Platforms/pcecd.json and its image are copied only
-# when the card has none.
+# reads Assets/pcecd/common, and Mazamars312's core stays as it was beside this one.
+# Nothing there is moved or written over; the one thing added, while the CD+G step
+# in Next is open, is that step's test discs (tools/cdg-test-disc.py). Platforms/
+# pcecd.json and its image are copied only when the card has none.
+#
+# A bitstream older than BITSTREAM_NOT_BEFORE isn't deployed: each Mac builds its
+# own, so one can have this firmware and a bitstream from before a change between
+# the two. Set it when such a change goes in. The last, 3 Nov 2026: subcode goes
+# as a transfer of its own, which an older bitstream plays as noise.
 #
 # One copy to the card at a time, under /tmp/pocket-card.lock (shared with the
 # other cores' deploy scripts). Nothing ejects the card.
@@ -26,6 +32,7 @@ DIST="$REPO/dist"
 BIN="$DIST/Cores/$CORE/bitstream.rbf_r"
 FW="$DIST/Assets/pcecd/$CORE/pce_mpu_bios.bin"
 RECORD="$REPO/build/deployed.txt"
+BITSTREAM_NOT_BEFORE="2026-11-03 15:22"
 [ -f "$BIN" ] || { echo "no $BIN - run tools/build.sh first"; exit 1; }
 
 VOL="" STATUS=0
@@ -69,6 +76,11 @@ if [ $STATUS = 1 ]; then
 	exit 0
 fi
 
+if [ "$(stat -f %m "$BIN")" -lt "$(date -j -f '%Y-%m-%d %H:%M' "$BITSTREAM_NOT_BEFORE" +%s)" ]; then
+	echo "This Mac's bitstream, built $(built), is older than this firmware needs ($BITSTREAM_NOT_BEFORE). Build first: tools/build.sh"
+	exit 1
+fi
+
 [ -n "$VOL" ] || find_card || { echo "No Analogue Pocket SD card found (no volume with Analogue_Pocket.json)"; exit 1; }
 [ -f "$VOL/Analogue_Pocket.json" ] || { echo "$VOL is not the Pocket's card"; exit 1; }
 
@@ -103,6 +115,15 @@ echo "Copied the firmware, $(wc -c < "$FW" | tr -d ' ') bytes"
 mkdir -p "$VOL/Platforms/_images" "$VOL/Assets/pcecd/common"
 [ -f "$VOL/Platforms/pcecd.json" ] || cp "$DIST/Platforms/pcecd.json" "$VOL/Platforms/"
 [ -f "$VOL/Platforms/_images/pcecd.bin" ] || cp "$DIST/Platforms/_images/pcecd.bin" "$VOL/Platforms/_images/"
+
+# CD+G's test discs, where the card hasn't any
+TEST="$REPO/build/cdg-test"
+[ -f "$TEST/CDG Test.sub" ] || python3 -I "$REPO/tools/cdg-test-disc.py" "$TEST" >/dev/null
+for f in "CDG Test.cue" "CDG Test.bin" "CDG Test.sub" "CDG Test Plain.cue" "CDG Test Track.cue" "CDG Test Track.bin"; do
+	[ -f "$VOL/Assets/pcecd/common/$f" ] || cp "$TEST/$f" "$VOL/Assets/pcecd/common/$f"
+	cmp -s "$TEST/$f" "$VOL/Assets/pcecd/common/$f" || echo "Note: the card has a different $f; left as it is"
+done
+echo "CD+G's test discs are on the card"
 
 mkdir -p "$(dirname "$RECORD")"
 {

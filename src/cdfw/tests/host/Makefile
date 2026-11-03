@@ -17,8 +17,9 @@ define build
 	g++ $2 -std=gnu++17 -g -O1 -I$1/stubs -include host_stubs.h -o $1/test_cue test_cue.cpp $1/*.o
 endef
 
-test: build/native/test_cue
-	./$<
+test: build/native/test_cue build/native/test_fileio
+	./build/native/test_cue
+	./build/native/test_fileio
 
 test32: build/m32/test_cue
 	./$<
@@ -28,6 +29,10 @@ build/native/test_cue: $(SRC)
 
 build/m32/test_cue: $(SRC)
 	$(call build,build/m32,-m32)
+
+# The read cache, real, against a fake bridge
+build/native/test_fileio: test_fileio.cpp host_stubs.h $(FW)/drivers/apf/fileio.cpp build/native/test_cue
+	g++ $(SAN) -w -Wno-c++11-narrowing -std=gnu++17 -g -O1 -Ibuild/native/stubs -include host_stubs.h -o $@ test_fileio.cpp
 
 # Every disc under DIR through the loader, and the data checked where it says
 disc-check: build/native/disc_check

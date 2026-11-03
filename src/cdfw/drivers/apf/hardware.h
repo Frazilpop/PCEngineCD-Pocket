@@ -74,6 +74,9 @@ extern uint32_t dataslot_open_error;
 
 #define MAIN_ADDRESS_OFFSET          0x00000000 // We want to make sure we advise the APF where the BRAM is of the CPU
 #define MAIN_SCRACH_ADDRESS_OFFSET   0x01000000 // We want to make sure we advise the APF where the BRAM is of the CPU
+#define SECTOR_CACHE_SIZE (8 * 1024)      // the two read buffers, the whole 16K of scratch RAM between them
+#define SECTOR_CACHE_SIZE_SUB (7 * 1024)  // on a disc with a .sub: 2K left for its sectors, at SUB_CACHE_AT
+#define SUB_CACHE_AT (2 * SECTOR_CACHE_SIZE_SUB)
 #define MAIN_PSRAM_ADDRESS_OFFSET    0x02000000 // We want to make sure we advise the APF where the BRAM is of the CPU
 
 #define SYS_CLOCK  7425 // This is the CPU clock speed in a int size 74.2mhz

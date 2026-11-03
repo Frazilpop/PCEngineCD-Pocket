@@ -46,6 +46,22 @@ static char bin_dir[CUE_PATH_MAX]; // folder of the files it names, ending in '/
 static char path[CUE_PATH_MAX];
 static uint32_t cue_read_error; // what a read of the CUE failed with
 
+// Subcode. MiSTer's drive holds a .sub file open; here it has a slot of its own,
+// as slot 101 changes file with the tracks, and a read of it brings in a run of
+// sectors, as a read per sector on the same tick as the audio's costs too much.
+#define SUB_SLOT 102
+#define SUB_CACHE_SECTORS 21	// what fits in the 2K of scratch RAM at SUB_CACHE_AT
+static dataslot_type sub_aft;
+static char cue_file[CUE_PATH_MAX];	// the CUE's own name
+static int sub_size;			// the .sub's size, 0 for none
+static int sub_first;			// the disc address of the first sector read in
+static int sub_count;			// and how many
+static int sub_last_lba = -1;	// the address sub_tx holds
+// What goes to the chips: the transfer's header, 98 bytes with bit 14 for subcode;
+// the sync word a turning disc has, as MiSTer sends; and the 96 bytes, each one's
+// bits a symbol of channels P (bit 7) to W (bit 0).
+static uint8_t sub_tx[2 + 2 + 96] __attribute__((aligned(4))) = {0x62, 0x40, 0x00, 0x80};
+
 // Reads the next CUE line into out without its CR/LF. Returns 0 only at the end
 // of the CUE: a blank line is a line (it ended Ys IV's CUE at its second line,
 // so the disc had no tracks). A read that fails ends the CUE too: going round
@@ -218,6 +234,7 @@ uint16_t cue_t::LoadCUE(int dataslot) {
 	clearscrachram(0,16384);
 	memset((void *)&this->toc, 0, sizeof(this->toc));
 	strcpy(cue_dir, aft.aft_filepath);
+	strcpy(cue_file, aft.aft_filename);
 	bin_dir[0] = 0;
 	cue_offset = 0;
 	cue_size = toc_size;
@@ -301,7 +318,7 @@ uint16_t cue_t::LoadCUE(int dataslot) {
 			else if (strstr(lptr, "CDG"))
 			{
 				// To the console it's an audio track, in the TOC and in play. The 96 bytes
-				// after each sector's 2352 are its subcode, which isn't sent yet.
+				// after each sector's 2352 are its subcode (ReadSubcode).
 				track->sector_size = 2448;
 				track->type = 0;
 			}
@@ -361,6 +378,7 @@ uint16_t cue_t::LoadCUE(int dataslot) {
 	// The address after the last track, as MiSTer's Load sets: the lead-out, which a
 	// game can ask for as one track past the last.
 	this->toc.tracks[this->toc.last].start = this->toc.end;
+	OpenSubcode(cue_file);
 
 	for (int i = 0; i < this->toc.last; i++)
 	{
@@ -368,6 +386,35 @@ uint16_t cue_t::LoadCUE(int dataslot) {
 	}
 	
 	return 1;
+}
+
+// A .sub beside the CUE, with the CUE's name, as MiSTer looks for: one file for the
+// whole disc, at lba * 96. Most discs have none, and that isn't an error.
+void cue_t::OpenSubcode(const char *cue_name)
+{
+	bool error_enabled = file_error_enabled;
+	int error_code = file_error_code;
+	uint32_t open_error = dataslot_open_error;
+
+	sub_size = 0;
+	sub_count = 0;
+	sub_last_lba = -1;
+	memset(sub_tx + 4, 0, 96);
+	RISCFileCacheSize(SECTOR_CACHE_SIZE);
+
+	int len = snprintf(path, CUE_PATH_MAX, "%s%s", cue_dir, cue_name);
+	if ((len >= 4) && (len < CUE_PATH_MAX)) {
+		memcpy(path + len - 4, ".sub", 4);
+		sub_aft.aft_dataslot = SUB_SLOT;
+		if (!OpenFileNameDataSlot(&sub_aft, path)) {
+			sub_size = sub_aft.aft_op_filesize;
+		}
+	}
+	if (sub_size) RISCFileCacheSize(SECTOR_CACHE_SIZE_SUB);
+
+	file_error_enabled = error_enabled;
+	file_error_code = error_code;
+	dataslot_open_error = open_error;
 }
 
 uint16_t cue_t::Load(int dataslot)
@@ -543,6 +590,7 @@ void cue_t::Update() {
 					RISCFileSeek(this->toc.tracks[this->index].name, FilePos(this->index, this->lba), this->toc.tracks[this->index].sector_size, this->index, &aft);
 					ReadCDDA();
 				}
+				SendSubcode();
 			}
 			this->lba++;
 		}
@@ -574,6 +622,10 @@ void cue_t::Update() {
 	{
 		subq_send = this->subq_pend;
 		this->subq_pend = false;
+
+		// The GRAPHICS screen of the system card's CD player keeps its time from this
+		// stream: when it stops, the player calls it a disc error.
+		SendSubcode();
 
 		if (this->latency > 0)
 		{
@@ -953,6 +1005,105 @@ void cue_t::ReadCDDA()
 	this->audioLength = 2352;
 	this->audioOffset = 0;// 2352;
 	RISCFileReadAdv(this->toc.tracks[this->index].dataslot,0x30,0x09,UIO_CD_DATA,2352);
+}
+
+// A sector's 96 bytes of the .sub, as it has them: twelve for each channel in turn.
+bool cue_t::SubcodeFromFile(int lba, uint8_t *subc)
+{
+	if ((lba < 0) || ((lba + 1) * 96 > sub_size)) return false;
+
+	if ((lba < sub_first) || (lba >= sub_first + sub_count))
+	{
+		bool error_enabled = file_error_enabled;
+		int error_code = file_error_code;
+		int left = (sub_size - lba * 96) / 96;
+
+		sub_count = (left < SUB_CACHE_SECTORS) ? left : SUB_CACHE_SECTORS;
+		sub_first = lba;
+		while (!dataslot_ready());	// the audio's read ahead may still be going
+		uint32_t error = dataslot_read(SUB_SLOT, APF_SCRACH_ADDRESS_OFFSET + SUB_CACHE_AT, lba * 96, sub_count * 96);
+		// a bad read of the graphics is no reason to put a box over the game
+		file_error_enabled = error_enabled;
+		file_error_code = error_code;
+		if (error) {
+			sub_count = 0;
+			return false;
+		}
+	}
+	memcpy(subc, (const uint8_t *)(MAIN_SCRACH_ADDRESS_OFFSET + SUB_CACHE_AT + (lba - sub_first) * 96), 96);
+	return true;
+}
+
+// Fills sub_tx for where the head is, as MiSTer's ReadSubcode does, with the one
+// addition of a CDG track, which has its subcode in its own sectors. While the head
+// is on its way, the last sector's stays.
+void cue_t::ReadSubcode()
+{
+	static uint8_t subc[96];
+	int lba = this->lba;
+	msf_t msf;
+
+	if ((lba == sub_last_lba) || (this->latency != 0)) return;
+	sub_last_lba = lba;
+
+	int t = GetTrackByLBA(lba, &this->toc);
+	cd_track_t *track = &this->toc.tracks[t];
+
+	if (sub_size)
+	{
+		if (!SubcodeFromFile(lba, subc)) return;
+	}
+	else if ((track->sector_size == 2448) && (lba >= track->first))
+	{
+		// already a symbol a byte, so it goes as it is
+		if (RISCFileSeek(track->name, FilePos(t, lba) + 2352, 96, t, &aft)) RISCFileCopy(sub_tx + 4, 96);
+		return;
+	}
+	else
+	{
+		// Subcode Q, made up. The GRAPHICS screen needs it on any disc.
+		memset(subc, 0, 96);
+		subc[12] = 1;					// timing data
+		subc[13] = BCD(this->index + 1);	// track
+		subc[14] = 1;					// index (pregap = index 0, music = index 1; assume 1)
+
+		LBAToMSF(lba - this->toc.tracks[this->index].start, &msf);	// from the start of the track
+		subc[15] = BCD(msf.m);
+		subc[16] = BCD(msf.s);
+		subc[17] = BCD(msf.f);
+
+		LBAToMSF(lba + 150, &msf);		// from the start of the disc
+		subc[19] = BCD(msf.m);
+		subc[20] = BCD(msf.s);
+		subc[21] = BCD(msf.f);
+
+		uint8_t msb = 0, lsb = 0;		// its checksum
+		for (int i = 12; i < 22; i++) {
+			uint8_t x = subc[i] ^ msb;
+			x = x ^ (x >> 4);
+			msb = lsb ^ (x >> 3) ^ (x << 4);
+			lsb = x ^ (x << 5);
+		}
+		subc[22] = msb ^ 0xff;
+		subc[23] = lsb ^ 0xff;
+	}
+
+	for (int i = 0; i < 96; i++)
+	{
+		uint8_t code = 0;
+		for (int j = 0; j < 8; j++)		// P = 0, Q = 1 and so on
+		{
+			uint8_t bits = subc[(j * 12) + (i >> 3)] >> (7 - (i & 7));
+			code |= (bits & 1) << (7 - j);
+		}
+		sub_tx[4 + i] = code;
+	}
+}
+
+void cue_t::SendSubcode()
+{
+	ReadSubcode();
+	if (SendData) SendData(sub_tx, sizeof(sub_tx), CD_DATA_IO_INDEX);
 }
 
 void cue_t::CommandError(uint8_t key, uint8_t asc, uint8_t ascq, uint8_t fru) {

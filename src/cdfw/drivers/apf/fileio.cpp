@@ -34,8 +34,10 @@
 #include "fileio.h"
 #include "osd_menu.h"
 // #include "printf.h"
-#define MEM_BUFFER_SIZE_C (8 * 1024)
-#define MEM_BUFFER_SIZE_TOTAL (2 * MEM_BUFFER_SIZE_C)
+// Each of the two buffers in the scratch RAM. RISCFileCacheSize makes them smaller
+// when a disc needs the rest of the scratch RAM for its subcode.
+static uint32_t sector_cache_size = SECTOR_CACHE_SIZE;
+#define MEM_BUFFER_SIZE_C sector_cache_size
 // We are making two 16K cache buffers for these commands and they will cache them in the memory locations
 // uint8_t sector_buffer1[MEM_BUFFER_SIZE_C]; // We have to set an attribute to help point the program in to the 32K buffer that the APF bus has access to after the MPU has been restarted
 // uint8_t sector_buffer0[MEM_BUFFER_SIZE_C]; // We have to set an attribute to help point the program in to the 32K buffer that the APF bus has access to after the MPU has been restarted
@@ -81,6 +83,19 @@ uint32_t sector_buffer_transfer_size_max_process(int dataslot, uint32_t offset){
   } else {
     return(file_left_over);
   }
+}
+
+// Sets how big the two buffers are and forgets what they hold. For a disc's load,
+// before its first read.
+void RISCFileCacheSize(uint32_t size) {
+  sector_cache_size = size;
+  cache_buffer_0_enabled = 0;
+  cache_buffer_1_enabled = 0;
+  sector_buffer0_address = 0;
+  sector_buffer1_address = 0;
+  sector_buffer_selector = 0;
+  sector_buffer_offset = 0;
+  sector_buffer_processing = 0;
 }
 
 void timer_disply_for_wait() {
@@ -260,6 +275,20 @@ uint32_t RISCFileReadAdv(int dataslot, uint8_t cmd0, uint8_t cmd1, uint8_t cmd_h
   HPS_DisableIO();
   // mainprintf("\033[92;1;1m Done the change\033[0m\r\n");
   return 1;
+}
+
+// Copies out what RISCFileSeek found, for the firmware's own use. It runs on into the
+// other buffer as RISCFileReadAdv does.
+void RISCFileCopy(uint8_t *dst, uint32_t len) {
+  uint8_t *here = (uint8_t *)MAIN_SCRACH_ADDRESS_OFFSET + (sector_buffer_selector ? MEM_BUFFER_SIZE_C : 0);
+  uint8_t *next = (uint8_t *)MAIN_SCRACH_ADDRESS_OFFSET + (sector_buffer_selector ? 0 : MEM_BUFFER_SIZE_C);
+  uint32_t left = MEM_BUFFER_SIZE_C - sector_buffer_offset;
+  if (len <= left) {
+    memcpy(dst, here + sector_buffer_offset, len);
+  } else {
+    memcpy(dst, here + sector_buffer_offset, left);
+    memcpy(dst + left, next, len - left);
+  }
 }
 
 // A sector of nothing, for an address the file does not have (a PREGAP).

@@ -370,8 +370,9 @@ module pce (
    	if (cd_dat_write) begin
    		if (!cd_wr) begin
    			cd_wr <= 1;
-				// Bit 14 of the header: the sector carries its subcode after its 2352 bytes of audio
-				cd_sub <= cd_cdg && cd_dat_cnt >= 12'd2352;
+				// Bit 14 of the header: this transfer is subcode, MiSTer's separate ioctl index.
+				// It goes apart from the audio, as a paused drive sends it with no audio to go with.
+				cd_sub <= cd_cdg;
    		end
    		else begin
    			cd_wr <= 0;

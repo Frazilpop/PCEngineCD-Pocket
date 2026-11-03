@@ -25,6 +25,12 @@ static std::map<std::string, uint32_t> sd_card;	// path -> size
 static std::vector<std::string> opens;			// every OpenFileNameDataSlot path
 static int cue_reads;
 static int fake_read_error;	// what every read of the CUE answers, 0 for none
+uint32_t dataslot_open_error;
+static std::vector<std::string> sub_opens;	// the opens of the subcode's slot
+static std::string sub_file;	// what the .sub holds, read through slot 102
+static std::vector<uint32_t> sub_reads;	// where each read of it started
+static int sub_read_error;		// what a read of it answers, 0 for none
+static uint32_t cache_size;		// what the firmware last set the read buffers to
 static bool overflow;	// something the real hardware could not take
 
 // The split dataslot_pathname_file_decode() in apf.cpp does.
@@ -45,7 +51,8 @@ int GetFileNameDataSlot(dataslot_type *a)
 
 int OpenFileNameDataSlot(dataslot_type *a, const char *s)
 {
-	opens.push_back(s);
+	if (a->aft_dataslot == 102) sub_opens.push_back(s);
+	else opens.push_back(s);
 	if (strlen(s) > 254) overflow = true; // apf.cpp copies paths into 255 byte buffers
 	split_path(a, s);
 	if (!sd_card.count(s)) {
@@ -60,6 +67,16 @@ int OpenFileNameDataSlot(dataslot_type *a, const char *s)
 uint32_t dataslot_read(uint16_t slot, uint32_t address, uint32_t offset, uint32_t length)
 {
 	uint32_t at = address - APF_SCRACH_ADDRESS_OFFSET;
+	if (slot == 102) {
+		sub_reads.push_back(offset);
+		if ((at + length > sizeof(fake_scratch)) || (offset + length > sub_file.size())) overflow = true;
+		else if (!sub_read_error) memcpy(fake_scratch + at, sub_file.data() + offset, length);
+		if (sub_read_error) {
+			file_error_enabled = 1;
+			file_error_code = 9;
+		}
+		return sub_read_error;
+	}
 	cue_reads++;
 	if (fake_read_error) {
 		// a loader that keeps asking never ends: 0.3.0 and 0.4.0 on the Pocket
@@ -78,9 +95,13 @@ uint32_t dataslot_read(uint16_t slot, uint32_t address, uint32_t offset, uint32_
 }
 
 void clearscrachram(uint32_t offset, uint32_t size) { memset(fake_scratch + offset, 0, size); }
-uint32_t RISCFileSeek(const char *, uint32_t, uint32_t, uint32_t, dataslot_type *) { return 1; }
+static uint32_t last_seek, last_seek_size;	// what the firmware last asked the read cache for
+uint32_t RISCFileSeek(const char *, uint32_t at, uint32_t size, uint32_t, dataslot_type *) { last_seek = at; last_seek_size = size; return 1; }
 uint32_t RISCFileReadAdv(int, uint8_t, uint8_t, uint8_t, uint32_t) { return 1; }
 void RISCSendZeros(uint8_t, uint8_t, uint8_t, uint32_t) {}
+void RISCFileCacheSize(uint32_t size) { cache_size = size; }
+void RISCFileCopy(uint8_t *dst, uint32_t len) { for (uint32_t i = 0; i < len; i++) dst[i] = (uint8_t)(last_seek + i); }
+bool dataslot_ready() { return true; }
 void HPS_DisableIO() {}
 uint16_t spi_w(uint16_t) { return 0; }
 static int statuses;	// what SendStatus has sent
@@ -159,6 +180,9 @@ static result load(const std::string &path, const std::string &text, int error =
 	cue_text = text;
 	fake_dataslot_bram[1] = text.size();
 	opens.clear();
+	sub_opens.clear();
+	sub_reads.clear();
+	sub_read_error = 0;
 	cue_reads = 0;
 	overflow = false;
 	file_error_code = error;
@@ -466,9 +490,11 @@ static void test_read_error()
 /* ------------------------------------------------- the drive, against MiSTer */
 
 static std::vector<uint8_t> sent;	// what the drive last sent the console as data
+static std::vector<std::vector<uint8_t>> sent_subcode;	// every transfer of subcode, in order
 static int capture(uint8_t *buf, int len, uint8_t)
 {
 	sent.assign(buf, buf + len);
+	if (len >= 2 && (buf[1] & 0x40)) sent_subcode.push_back(sent);
 	return 1;
 }
 
@@ -620,6 +646,212 @@ static void test_cdg_is_audio()
 	CHECK(sent.size() == 6 && sent[5] == 0);
 }
 
+/* ---------------------------------------------------------------- subcode */
+
+// A transfer of subcode is 0x4062, the sync word and 96 bytes.
+static bool is_subcode(const std::vector<uint8_t> &t)
+{
+	return (t.size() == 100) && (t[0] == 0x62) && (t[1] == 0x40) && (t[2] == 0) && (t[3] == 0x80);
+}
+
+// The 12 bytes of channel Q from a transfer, by the Red Book's order of bits.
+static std::vector<uint8_t> channel(const std::vector<uint8_t> &t, int ch)
+{
+	std::vector<uint8_t> out(12, 0);
+	for (int i = 0; i < 96; i++) {
+		if (t[4 + i] & (0x80 >> ch)) out[i >> 3] |= 0x80 >> (i & 7);
+	}
+	return out;
+}
+
+// CRC-16-CCITT, bit by bit: the sum subcode Q has, with its bits inverted.
+static bool q_crc_good(const std::vector<uint8_t> &q)
+{
+	uint16_t crc = 0;
+	for (int i = 0; i < 10; i++) {
+		crc ^= q[i] << 8;
+		for (int b = 0; b < 8; b++) crc = (crc & 0x8000) ? (crc << 1) ^ 0x1021 : crc << 1;
+	}
+	crc = ~crc;
+	return (q[10] == (crc >> 8)) && (q[11] == (crc & 0xff));
+}
+
+static void tick(int n = 1)
+{
+	for (int i = 0; i < n; i++) cue.Update();
+}
+
+// No .sub: subcode Q made up for each sector played, as MiSTer's, with every other
+// channel empty. A play sends a sector and its subcode, two of each on its first.
+static void test_subcode_made_up()
+{
+	three_tracks();
+	CHECK(sub_opens == std::vector<std::string>({common + "Three/three.sub"}));
+	CHECK(cache_size == SECTOR_CACHE_SIZE);
+	CHECK(file_error_code == 0 && !file_error_enabled);	// no .sub is no error
+
+	command(CD_COMM_SAPSP, CD_CDDAMODE_NORMAL, 0x00, 0x06, 0x00, 0x40);	// 00:06:00, address 300, track 1
+	cue.latency = 0;
+	cue.audiodelay = 0;
+	sent_subcode.clear();
+	tick();
+	CHECK(sent_subcode.size() == 2);	// 300 and 301
+	tick();
+	CHECK(sent_subcode.size() == 3);
+	for (const auto &t : sent_subcode) {
+		CHECK(is_subcode(t));
+		CHECK(q_crc_good(channel(t, 1)));
+		for (int ch = 0; ch < 8; ch++) {
+			if (ch != 1) CHECK(channel(t, ch) == std::vector<uint8_t>(12, 0));
+		}
+	}
+	// address 302: 4 seconds 2 frames into track 1, 6 seconds 2 frames on the disc
+	const std::vector<uint8_t> q = channel(sent_subcode[2], 1);
+	const uint8_t want[10] = {0x01, 0x01, 0x01, 0x00, 0x04, 0x02, 0x00, 0x00, 0x06, 0x02};
+	CHECK(!memcmp(q.data(), want, 10));
+}
+
+// Paused, the last sector goes round on every tick, with no track to read.
+static void test_subcode_when_paused()
+{
+	three_tracks();
+	command(CD_COMM_SAPSP, CD_CDDAMODE_SILENT, 0x00, 0x06, 0x00, 0x40);
+	CHECK(cue.state == CD_STATE_PAUSE);
+	cue.latency = 2;
+	sent_subcode.clear();
+	tick(2);	// the head is on its way, so what's sent is the last sector's: nothing yet
+	CHECK(sent_subcode.size() == 2);
+	CHECK(is_subcode(sent_subcode[1]));
+	CHECK(channel(sent_subcode[1], 1) == std::vector<uint8_t>(12, 0));
+	tick(3);	// and now it's there
+	CHECK(sent_subcode.size() == 5);
+	CHECK(q_crc_good(channel(sent_subcode[2], 1)));
+	CHECK(sent_subcode[2] == sent_subcode[4]);
+	// a drive that's stopped sends none
+	cue.state = CD_STATE_IDLE;
+	sent_subcode.clear();
+	tick(3);
+	CHECK(sent_subcode.empty());
+}
+
+// A data track sends none, as on MiSTer, nor does a head on its way while playing.
+static void test_no_subcode_on_data()
+{
+	three_tracks();
+	command(CD_COMM_SAPSP, CD_CDDAMODE_NORMAL, 0x02, 0x03, 0x25, 0x40);	// address 9100, in the data track
+	cue.latency = 0;
+	cue.audiodelay = 0;
+	sent_subcode.clear();
+	tick();
+	CHECK(sent_subcode.empty());
+	command(CD_COMM_SAPSP, CD_CDDAMODE_NORMAL, 0x00, 0x06, 0x00, 0x40);
+	cue.latency = 3;
+	sent_subcode.clear();
+	tick(3);
+	CHECK(sent_subcode.empty());
+}
+
+// A .sub beside the CUE, 96 bytes at lba * 96, twelve for each channel: unpacked
+// to a symbol a byte, read a run of sectors at a time from its own slot.
+static void test_subcode_file()
+{
+	const std::string dir = common + "Karaoke/";
+	const int sectors = 2000;
+	sub_file.resize(sectors * 96);
+	for (int s = 0; s < sectors; s++) {
+		for (int i = 0; i < 96; i++) sub_file[s * 96 + i] = (char)(s * 7 + i * 13 + (s >> 8));
+	}
+	sd_card.clear();
+	sd_card[dir + "k.bin"] = 2352 * sectors;
+	sd_card[dir + "k.sub"] = sub_file.size();
+	result r = load(dir + "k.cue", "FILE k.bin BINARY\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n");
+	CHECK(r.ret == 1);
+	CHECK(r.error == 0);
+	CHECK(opens == std::vector<std::string>({dir + "k.bin"}));
+	CHECK(sub_opens == std::vector<std::string>({dir + "k.sub"}));
+	CHECK(cache_size == SECTOR_CACHE_SIZE_SUB);
+	CHECK(SUB_CACHE_AT + 21 * 96 <= (int)sizeof(fake_scratch));
+	cue.state = CD_STATE_IDLE;
+	cue.SendData = capture;
+
+	command(CD_COMM_SAPSP, CD_CDDAMODE_NORMAL, 0x00, 0x03, 0x25, 0x40);	// address 100
+	cue.latency = 0;
+	cue.audiodelay = 0;
+	sent_subcode.clear();
+	sub_reads.clear();
+	tick(30);
+	CHECK(sent_subcode.size() == 31);
+	for (int n = 0; n < 31; n++) {
+		CHECK(is_subcode(sent_subcode[n]));
+		for (int ch = 0; ch < 8; ch++) {
+			CHECK(!memcmp(channel(sent_subcode[n], ch).data(), sub_file.data() + (100 + n) * 96 + ch * 12, 12));
+		}
+	}
+	CHECK(sub_reads == std::vector<uint32_t>({100 * 96, 121 * 96}));	// 31 sectors, 21 a read
+
+	// past the file's end, the last sector stays and nothing reads past it
+	cue.lba = sectors - 1;
+	sent_subcode.clear();
+	sub_reads.clear();
+	cue.state = CD_STATE_PAUSE;
+	tick();
+	CHECK(sub_reads == std::vector<uint32_t>({(uint32_t)(sectors - 1) * 96}));
+	CHECK(!memcmp(channel(sent_subcode[0], 0).data(), sub_file.data() + (sectors - 1) * 96, 12));
+	cue.lba = sectors;
+	tick();
+	CHECK(sub_reads.size() == 1);
+	CHECK(sent_subcode[1] == sent_subcode[0]);
+
+	// a read that fails leaves no box over the game, and is tried again at the next address
+	cue.lba = 10;
+	sub_read_error = 3;
+	sub_reads.clear();
+	sent_subcode.clear();
+	tick();
+	CHECK(sub_reads.size() == 1);
+	CHECK(!file_error_enabled && file_error_code == 0);
+	sub_read_error = 0;
+	cue.lba = 11;
+	tick();
+	CHECK(sub_reads == std::vector<uint32_t>({10 * 96, 11 * 96}));
+	CHECK(!memcmp(channel(sent_subcode[1], 0).data(), sub_file.data() + 11 * 96, 12));
+	sd_card.erase(dir + "k.sub");
+}
+
+// A CUE with no extension worth changing still loads, with no .sub looked for.
+static void test_subcode_short_name()
+{
+	sd_card.clear();
+	sd_card["/k.bin"] = 2352 * 100;
+	result r = load("/k.cue", "FILE k.bin BINARY\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n");
+	CHECK(r.ret == 1);
+	CHECK(sub_opens == std::vector<std::string>({"/k.sub"}));
+}
+
+// A CDG track has its subcode in its sectors, already a symbol a byte, so it goes
+// as it is. The stub's copy writes each byte's own file position, to see which.
+static void test_cdg_track_subcode()
+{
+	const std::string dir = common + "CDG/";
+	sd_card.clear();
+	sd_card[dir + "k.bin"] = 2448 * 75 * 60;
+	result r = load(dir + "k.cue", "FILE k.bin BINARY\n  TRACK 01 CDG\n    INDEX 01 00:00:00\n");
+	CHECK(r.ret == 1);
+	CHECK(cache_size == SECTOR_CACHE_SIZE);
+	cue.state = CD_STATE_IDLE;
+	cue.SendData = capture;
+	command(CD_COMM_SAPSP, CD_CDDAMODE_NORMAL, 0x00, 0x02, 0x10, 0x40);	// address 10
+	cue.latency = 0;
+	cue.audiodelay = 0;
+	cue.CDDAFirst = 0;
+	sent_subcode.clear();
+	tick();
+	CHECK(sent_subcode.size() == 1);
+	CHECK(is_subcode(sent_subcode[0]));
+	CHECK(last_seek == 10 * 2448 + 2352 && last_seek_size == 96);
+	for (int i = 0; i < 96; i++) CHECK(sent_subcode[0][4 + i] == (uint8_t)(10 * 2448 + 2352 + i));
+}
+
 int main()
 {
 	test_resolve();
@@ -640,6 +872,12 @@ int main()
 	test_subq_before_the_tick();
 	test_no_disc();
 	test_cdg_is_audio();
+	test_subcode_made_up();
+	test_subcode_when_paused();
+	test_no_subcode_on_data();
+	test_subcode_file();
+	test_subcode_short_name();
+	test_cdg_track_subcode();
 	printf("%s: %d of %d checks failed\n", failures ? "FAILED" : "OK", failures, checks);
 	return failures != 0;
 }

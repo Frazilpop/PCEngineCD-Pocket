@@ -38,6 +38,8 @@
 
 
 void clearscrachram(uint32_t offset, uint32_t size);
+void RISCFileCacheSize(uint32_t size);
+void RISCFileCopy(uint8_t *dst, uint32_t len);
 uint32_t RISCFileSeek(const char *s, uint32_t offset, uint32_t size, uint32_t Sector_track_number, dataslot_type *aft);
 uint32_t RISCFileReadAdv(int dataslot, uint8_t cmd0, uint8_t cmd1, uint8_t cmd_hps, uint32_t offset);
 void RISCSendZeros(uint8_t cmd0, uint8_t cmd1, uint8_t cmd_hps, uint32_t size);
