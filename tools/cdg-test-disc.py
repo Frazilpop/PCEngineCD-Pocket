@@ -13,8 +13,10 @@ Three CUEs of 30 seconds, two tracks each, a beep on each second:
     CDG Test Plain.cue    the first disc's audio with no .sub, so the drive makes up
                           subcode Q and the GRAPHICS screen has no pictures to show
 
-The screen says CD+G, the track and the seconds, the seconds changing on the beep.
-The subcode is true to the standard: packs of 24 six-bit symbols at 300 a second,
+The screen says CD+G, the track and the seconds. These discs show pictures, they
+don't time them: a tile goes in each pack, so the new digit appears 117 to 233 ms
+after its beep starts, and on every fifth second the rest of the screen goes first,
+which makes it 590 to 850 ms. The subcode is true to the standard: packs of 24 six-bit symbols at 300 a second,
 Reed-Solomon over GF(64) with x^6+x+1, symbols 1/18, 2/5 and 3/23 swapped, and each
 symbol i put off by i mod 8 packs. --check undoes that, tests the parity and writes
 the packs as a .cdg, for ffmpeg's own decoder to draw.

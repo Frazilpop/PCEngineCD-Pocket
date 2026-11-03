@@ -12,9 +12,8 @@
 #
 # The games and the system cards are the card's own: every PC Engine CD core
 # reads Assets/pcecd/common, and Mazamars312's core stays as it was beside this one.
-# Nothing there is moved or written over; the one thing added, while the CD+G step
-# in Next is open, is that step's test discs (tools/cdg-test-disc.py). Platforms/
-# pcecd.json and its image are copied only when the card has none.
+# Nothing there is moved, written over or added. Platforms/pcecd.json and its image
+# are copied only when the card has none.
 #
 # A bitstream older than BITSTREAM_NOT_BEFORE isn't deployed: each Mac builds its
 # own, so one can have this firmware and a bitstream from before a change between
@@ -115,15 +114,6 @@ echo "Copied the firmware, $(wc -c < "$FW" | tr -d ' ') bytes"
 mkdir -p "$VOL/Platforms/_images" "$VOL/Assets/pcecd/common"
 [ -f "$VOL/Platforms/pcecd.json" ] || cp "$DIST/Platforms/pcecd.json" "$VOL/Platforms/"
 [ -f "$VOL/Platforms/_images/pcecd.bin" ] || cp "$DIST/Platforms/_images/pcecd.bin" "$VOL/Platforms/_images/"
-
-# CD+G's test discs, where the card hasn't any
-TEST="$REPO/build/cdg-test"
-[ -f "$TEST/CDG Test.sub" ] || python3 -I "$REPO/tools/cdg-test-disc.py" "$TEST" >/dev/null
-for f in "CDG Test.cue" "CDG Test.bin" "CDG Test.sub" "CDG Test Plain.cue" "CDG Test Track.cue" "CDG Test Track.bin"; do
-	[ -f "$VOL/Assets/pcecd/common/$f" ] || cp "$TEST/$f" "$VOL/Assets/pcecd/common/$f"
-	cmp -s "$TEST/$f" "$VOL/Assets/pcecd/common/$f" || echo "Note: the card has a different $f; left as it is"
-done
-echo "CD+G's test discs are on the card"
 
 mkdir -p "$(dirname "$RECORD")"
 {
