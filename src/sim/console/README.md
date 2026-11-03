@@ -11,14 +11,14 @@ bash tools/sim.sh                                  # the test card and disc, 240
 bash tools/sim.sh --card roms/bios_3_0_jap.pce --disc "roms/Game/Game.cue" --frames 900 --every 30
 bash tools/sim.sh --card CARD --disc CUE --press 300:run --press 400:i:8 --save 500,501
 bash tools/sim.sh --card CARD --disc CUE --arcade  # the Arcade System core setting: the card's RAM (AC_EN)
-NO_BUILD=1 bash tools/sim.sh ...                   # on the build there is; several at once
+SIM_OUT=build/sim_b NO_BUILD=1 bash tools/sim.sh ... # on the build there is, into its own folder; several at once
 SIM_FW_PRINT=1 bash tools/sim.sh ...               # the firmware's mainprintf on stderr
 ```
 
 `--press F:buttons[:N]` holds buttons on pad 1 from frame F for N frames (4 by default):
 `up down left right i ii select run`, joined with `+`.
 
-Out, in `build/sim_pce/`:
+Out, in `build/sim_pce/` or `SIM_OUT`:
 
 | file | what |
 |---|---|
@@ -41,7 +41,21 @@ frame 104, on 3 Nov 2026.
 ```sh
 bash tools/mame-frames.sh 30 60 90                       # the test card and disc: into build/mame_pce
 bash tools/mame-frames.sh --card CARD --disc CUE 300 600
+bash tools/mame-frames.sh --card CARD --disc CUE --press 40:run --arcade $(seq 1 1800)   # pad 1, and an Arcade Card Pro
+python3 -I src/sim/console/compare.py build/sim_pce build/mame_pce --sheet /tmp/pairs.png
 ```
+
+`compare.py` pairs each of the sim's frames with the MAME frame that shows the same, going forward
+in time, and counts the dots that differ at the console's own 9 bits of colour. Give it every MAME
+frame around what matters: with only every second one, a wipe or a moving sprite shows as a
+difference. At 5.37 MHz the sim's picture sits 9 dots right of MAME's left edge and 2 lines above its
+top, so the sim's top two lines aren't compared. `--arcade` in MAME takes Japan's 3.0 card, which its
+software list names by checksum; the `bios_3_0_jap.pce` used here is that card.
+
+**What a real game does here, 3 Nov 2026** (docs/PLAN.md has it in full): Popful Mail, R-Type
+Complete CD and Mad Stalker with `--arcade` all reach their games, with no hang, and the frames match
+MAME's dot for dot but for a raster window's edge one line later. The title takes Run from frame 30;
+the sim then runs behind MAME by the seeks, 37 frames at the first logo and 100 to 250 later.
 
 The test card passes in MAME too, whose drive is its own code: the same TOC, the same sums.
 READ SUBQ's second byte, the control and address, is 0 here and 41 in MAME; `cue.cpp` sets it to 0
@@ -92,8 +106,13 @@ and no check reads it (docs/PLAN.md). MAME's picture is 1088 wide, four across t
   counts 256: it takes `CE_FS`, and the real one takes `main.sv`'s `ce_pix`, half a clock later, so
   one more pixel gets past its border delay. The first or last pixel of a line isn't worth reading
   anything into. The Pocket's picture is straight and whole, so nothing has been done about it.
-- **Speed:** about 2 s of CPU a frame on the MacBook Air, so a second of the console takes two
-  minutes. With the Mac busy (load average 50 to 80, 3 Nov 2026) it took 7.7 s a frame.
+- **Speed:** 1.3 to 2 s of CPU a frame on the MacBook Air, so a second of the console takes a minute
+  or two. With the Mac busy (load average 50 to 80, 3 Nov 2026) it took up to 7.7 s a frame.
+- **A disc read from the Pocket's card needs the card left in for the whole run.** With a file gone,
+  the drive's open sets error 2 in `run.json` and the game carries on with what it read. For a long
+  run, copy the disc into `roms/`.
+- **Don't edit `tools/sim.sh` while it runs:** bash reads it as it goes, and it ends in a syntax error
+  after the run has finished, its output whole.
 
 One trap, as Genesis's: an input port's default is run at time 0, and where the module has been
 inlined it lands on the net the port is wired to, so `main.cpp` evaluates once before it sets the

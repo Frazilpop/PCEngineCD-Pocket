@@ -4,13 +4,14 @@
 #   bash tools/sim.sh                                    the test card and test disc for 240 frames; checks what they report
 #   bash tools/sim.sh --card CARD --disc CUE [--frames N] [--every K] [--save F,F] [--press F:buttons[:N]] [--arcade]
 #   NO_BUILD=1 bash tools/sim.sh ...                     a run on the build there is
+#   SIM_OUT=DIR NO_BUILD=1 bash tools/sim.sh ...         somewhere else, for several at once
 # The build is kept in build/sim and made again only when a source changes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 R=$PWD/src/fpga/core/rtl
 S=$PWD/src/sim/console
 B=$PWD/build/sim
-OUT=$PWD/build/sim_pce
+OUT=${SIM_OUT:-$PWD/build/sim_pce}
 mkdir -p "$B/gen" "$OUT"
 
 GHDL=$PWD/build/tools/ghdl/bin/ghdl
