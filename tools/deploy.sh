@@ -12,8 +12,10 @@
 #
 # The games and the system cards are the card's own: every PC Engine CD core
 # reads Assets/pcecd/common, and Mazamars312's core stays as it was beside this one.
-# Nothing there is moved, written over or added. Platforms/pcecd.json and its image
-# are copied only when the card has none.
+# Nothing there is moved, written over or added. Platforms/pcecd.json is copied only
+# when the card has none, and so is its image until the banner has been made
+# (art/pcecd-banner.png); from then on the image goes on whenever the card's differs,
+# and every PC Engine CD core on the card shows it.
 #
 # A bitstream older than BITSTREAM_NOT_BEFORE isn't deployed: each Mac builds its
 # own, so one can have this firmware and a bitstream from before a change between
@@ -110,10 +112,14 @@ cp "$FW" "$VOL/Assets/pcecd/$CORE/"
 cmp -s "$FW" "$VOL/Assets/pcecd/$CORE/pce_mpu_bios.bin" || { echo "the firmware on the card differs from the build"; exit 1; }
 echo "Copied the firmware, $(wc -c < "$FW" | tr -d ' ') bytes"
 
-# the platform's name and image, only when the card has none
+# the platform's name, only when the card has none; its image, also when the repo has a
+# banner of its own and the card's differs
 mkdir -p "$VOL/Platforms/_images" "$VOL/Assets/pcecd/common"
 [ -f "$VOL/Platforms/pcecd.json" ] || cp "$DIST/Platforms/pcecd.json" "$VOL/Platforms/"
-[ -f "$VOL/Platforms/_images/pcecd.bin" ] || cp "$DIST/Platforms/_images/pcecd.bin" "$VOL/Platforms/_images/"
+if [ ! -f "$VOL/Platforms/_images/pcecd.bin" ] || { [ -f "$REPO/art/pcecd-banner.png" ] && ! cmp -s "$DIST/Platforms/_images/pcecd.bin" "$VOL/Platforms/_images/pcecd.bin"; }; then
+	cp "$DIST/Platforms/_images/pcecd.bin" "$VOL/Platforms/_images/"
+	echo "Copied the banner (every PC Engine CD core on the card shows it)"
+fi
 
 mkdir -p "$(dirname "$RECORD")"
 {
