@@ -18,12 +18,12 @@ module MB128
 	output        o_Active,
 	output  [3:0] o_Data,
 
-	input	        bk_clk,
-	input  [15:0] bk_address,
-	input  [15:0] bk_din,
-	output [15:0] bk_dout,
-	input         bk_we,
-	output        bk_written
+	// The master storage is outside this module: mb128_psram.sv, as 128 KB won't fit in
+	// the Pocket's block RAM. ram_dout is the bit at ram_addr, in time for the next i_Clk.
+	output [19:0] ram_addr,
+	output reg    ram_din,
+	output reg    ram_we,
+	input         ram_dout
 );
 
 // constants - STATEs
@@ -59,36 +59,9 @@ reg  [3:0] r_Data;
 
 reg        clk_prev;
 
-reg        ram_din;
-reg        ram_we;
-wire       ram_dout;
-
-//
-// master storage - should be backed by permanent storage like SDCard
-//
-dpram_difclk #(20,1,16,16) back128_l
-(
-	// Port A for MB128 access
-	//
-	.clock0(clk_sys),
-   .address_a(r_MB128_Addr),
-	.data_a(ram_din),
-	.wren_a(ram_we),
-	.q_a(ram_dout),
-
-	// Port B save/load
-	//
-	.clock1(bk_clk),
-	.address_b(bk_address),
-	.data_b(bk_din),
-	.wren_b(bk_we),
-	.q_b(bk_dout)
-);
-  
+assign ram_addr = r_MB128_Addr;
 
 always @(posedge clk_sys) begin
-
-	if(bk_address[15:10] == 2) bk_written <= 0;
 
 	ram_we <= 0;
 	if (ram_we) r_MB128_Addr <= r_MB128_Addr + 1'b1;
@@ -191,7 +164,6 @@ always @(posedge clk_sys) begin
 				r_Bit_Count <= r_Bit_Count + 1'b1;
 				ram_din     <= i_Data;
 				ram_we      <= 1;
-				bk_written  <= 1;
 
 				if (r_Bit_Count == r_MB128_Bits) begin
 					r_Bit_Count <= 0;

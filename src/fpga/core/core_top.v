@@ -439,8 +439,11 @@ parameter CMD_REG_ADDRESS 			= 8'hf8;
 
 	// bridge host commands
 	// synchronous to clk_74a
-	wire status_boot_done = pll_core_locked;
-	wire status_setup_done = pll_core_locked;  // rising edge triggers a target command
+	// Held until the MB128's memory is clear, as the Pocket loads the save after boot (mb128_psram.sv)
+	wire mb128_ready, mb128_mem_ok;
+	wire mb128_ready_s, mb128_mem_ok_s;
+	wire status_boot_done = pll_core_locked & mb128_ready_s;
+	wire status_setup_done = pll_core_locked & mb128_ready_s;  // rising edge triggers a target command
 	wire status_running = reset_n;  // we are running as soon as reset_n goes high
 
 	wire            dataslot_requestread;
@@ -862,7 +865,7 @@ MPU_AFP_CORE #(
   reg overscan_enable = 0;
   reg extra_sprites_enable = 0;
   reg raw_rgb_enable = 0;
-  reg mb128_enable = 0;
+  wire mb128_enable = CORE_OUTPUT[2];  // the firmware's, as it sizes the save from the same setting
 
   reg cd_audio_boost = 0;
   reg adpcm_audio_boost = 0;
@@ -917,6 +920,16 @@ MPU_AFP_CORE #(
       },
       clk_sys_42_95
   );
+
+  synch_3 #(
+      .WIDTH(2)
+  ) mb128_status_s (
+      {mb128_ready, mb128_mem_ok},
+      {mb128_ready_s, mb128_mem_ok_s},
+      clk_74a
+  );
+
+  assign CORE_INPUT = {31'd0, mb128_mem_ok_s};
 
   wire [15:0] audio_l;
   wire [15:0] audio_r;
@@ -1010,6 +1023,7 @@ MPU_AFP_CORE #(
 
       // Data out
       .sd_wr(sd_wr),
+      .sd_rd(sd_rd),
       .sd_buff_addr(sd_buff_addr[8:1]),
       .sd_lba(sd_buff_addr[24:9]),
       .sd_buff_dout(sd_buff_dout),
@@ -1027,6 +1041,19 @@ MPU_AFP_CORE #(
       .dram_cas_n					(dram_cas_n),
       .dram_we_n					(dram_we_n),
 
+      .cram0_a						(cram0_a),
+      .cram0_dq					(cram0_dq),
+      .cram0_clk					(cram0_clk),
+      .cram0_adv_n				(cram0_adv_n),
+      .cram0_cre					(cram0_cre),
+      .cram0_ce0_n				(cram0_ce0_n),
+      .cram0_ce1_n				(cram0_ce1_n),
+      .cram0_oe_n					(cram0_oe_n),
+      .cram0_we_n					(cram0_we_n),
+      .cram0_ub_n					(cram0_ub_n),
+      .cram0_lb_n					(cram0_lb_n),
+      .mb128_ready				(mb128_ready),
+      .mb128_mem_ok				(mb128_mem_ok),
 		
 
       .ce_pix 						(ce_pix),

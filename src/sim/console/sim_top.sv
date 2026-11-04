@@ -12,6 +12,26 @@ module sim_top (
 	input  logic [15:0] ioctl_dout,
 
 	input  logic ac_en,
+	input  logic mb128_en,
+
+	// the save slot, as core_top.v's data_loader and data_unloader give it to main.sv
+	input  logic save_download,
+	input  logic sd_wr,
+	input  logic sd_rd,
+	input  logic [7:0] sd_buff_addr,
+	input  logic [16:0] sd_lba,
+	input  logic [15:0] sd_buff_dout,
+	output logic [15:0] sd_buff_din,
+
+	output logic mb128_ready,
+	output logic mb128_mem_ok,
+	output logic [31:0] psram_violations,
+
+	// what a game asks of the MB128, for drive.log
+	output logic [3:0] mb128_state,
+	output logic mb128_req,
+	output logic [19:0] mb128_addr,
+	output logic [19:0] mb128_bits,
 
 	// {run, select, ii, i, right, left, down, up}
 	input  logic [7:0] pad,
@@ -44,6 +64,16 @@ module sim_top (
 	wire [7:0] r, g, b;
 	wire [15:0] dq;
 
+	wire [21:16] cram_a;
+	wire [15:0] cram_dq;
+	wire cram_clk, cram_adv_n, cram_cre, cram_ce0_n, cram_oe_n, cram_we_n, cram_ub_n, cram_lb_n;
+
+	psram_sim psram_sim (
+		.clk(clk_sys), .a(cram_a), .dq(cram_dq), .cram_clk(cram_clk), .adv_n(cram_adv_n), .cre(cram_cre),
+		.ce_n(cram_ce0_n), .oe_n(cram_oe_n), .we_n(cram_we_n), .ub_n(cram_ub_n), .lb_n(cram_lb_n),
+		.violations(psram_violations)
+	);
+
 	pce pce (
 		.clk_sys_42_95(clk_sys),
 		.clk_mem_85_91(clk_mem),
@@ -73,7 +103,7 @@ module sim_top (
 		.overscan_enable(1'b0),
 		.extra_sprites_enable(1'b0),
 		.raw_rgb_enable(1'b0),
-		.mb128_enable(1'b0),
+		.mb128_enable(mb128_en),
 		.cd_audio_boost(1'b0),
 		.adpcm_audio_boost(1'b0),
 		.master_audio_boost(2'b00),
@@ -83,15 +113,22 @@ module sim_top (
 		.ioctl_dout(ioctl_dout),
 		.cart_download(cart_download),
 
-		.sd_wr(1'b0),
-		.sd_buff_addr(8'd0),
-		.sd_lba(17'd0),
-		.sd_buff_dout(16'd0),
-		.sd_buff_din(),
-		.save_download(1'b0),
+		.sd_wr(sd_wr),
+		.sd_rd(sd_rd),
+		.sd_buff_addr(sd_buff_addr),
+		.sd_lba(sd_lba),
+		.sd_buff_dout(sd_buff_dout),
+		.sd_buff_din(sd_buff_din),
+		.save_download(save_download),
 
 		.dram_a(), .dram_ba(), .dram_dq(dq), .dram_dqm(), .dram_clk(), .dram_cke(),
 		.dram_ras_n(), .dram_cas_n(), .dram_we_n(),
+
+		.cram0_a(cram_a), .cram0_dq(cram_dq), .cram0_clk(cram_clk), .cram0_adv_n(cram_adv_n),
+		.cram0_cre(cram_cre), .cram0_ce0_n(cram_ce0_n), .cram0_ce1_n(), .cram0_oe_n(cram_oe_n),
+		.cram0_we_n(cram_we_n), .cram0_ub_n(cram_ub_n), .cram0_lb_n(cram_lb_n),
+		.mb128_ready(mb128_ready),
+		.mb128_mem_ok(mb128_mem_ok),
 
 		.ce_pix(ce_pix),
 		.hsync(hs),
@@ -108,6 +145,11 @@ module sim_top (
 
 		.EXT_BUS(ext_bus)
 	);
+
+	assign mb128_state = pce.MB128.r_State;
+	assign mb128_req   = pce.MB128.r_Req;
+	assign mb128_addr  = pce.MB128.r_MB128_Addr;
+	assign mb128_bits  = pce.MB128.r_MB128_Bits;
 
 	linebuffer linebuffer (
 		.clk_vid(clk_sys),

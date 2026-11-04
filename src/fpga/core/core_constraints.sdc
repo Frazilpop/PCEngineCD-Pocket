@@ -31,3 +31,7 @@ set_multicycle_path -from {ic|pce|color_mix|*} -to {isco|*} -start -hold 1
 set_multicycle_path -from {ic|pce|color_mix|*} -to {isco|*} -start -setup 2
 set_multicycle_path -from {ic|pce|color_mix|*} -to {iscc|*} -start -hold 1
 set_multicycle_path -from {ic|pce|color_mix|*} -to {iscc|*} -start -setup 2
+
+# The MB128's PSRAM is asynchronous, with whole clocks to spare on every timing (mb128_psram.sv)
+set_false_path -to   [get_ports {cram0_*}]
+set_false_path -from [get_ports {cram0_dq[*] cram0_wait}]

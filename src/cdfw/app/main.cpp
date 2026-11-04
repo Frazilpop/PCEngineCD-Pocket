@@ -35,6 +35,7 @@
 #include "spi.h"
 #include "core.h"
 #include "osd_menu.h"
+#include "save_size.h"
 
 void init()
 {
@@ -59,10 +60,14 @@ int file_error_code = 0;
 // The Pocket writes the save back at the size the slot table says, and writes
 // none at 0. Found by the slot's id: this was word 5, the third slot's size
 // whatever was third, and 0.2.3's data.json put Save fourth.
+static uint32_t save_bytes = 0;
+
 static void save_slot_size()
 {
 	uint32_t save_slot = dataslot_search_id(2);
-	DATASLOT_BRAM((save_slot ? save_slot : 4) + 1) = (uint32_t)0x00000800;	// 4: where data.json has it, if the table has no id yet
+	uint32_t at = (save_slot ? save_slot : 4) + 1;	// 4: where data.json has it, if the table has no id yet
+	save_bytes = save_size(save_bytes, DATASLOT_BRAM(at), AFP_REGISTOR(1) & 0x8);
+	DATASLOT_BRAM(at) = save_bytes;
 }
 
 void mainloop()
@@ -99,6 +104,8 @@ void mainloop()
 
 		core_poll_io();
 		core_reg_update();
+		// The setting can arrive after the first look, or be turned on mid-game.
+		if ((AFP_REGISTOR(1) & 0x8) && save_bytes != SAVE_WITH_MB128) save_slot_size();
 		if (RISCCheckTimer2(display_cd) && (file_error_code == 0)) {
 			osd_display_info();
 			display_cd = RISCGetTimer2(200);

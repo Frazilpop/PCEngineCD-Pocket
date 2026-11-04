@@ -12,6 +12,8 @@ bash tools/sim.sh --card roms/bios_3_0_jap.pce --disc "roms/Game/Game.cue" --fra
 bash tools/sim.sh --card CARD --disc CUE --press 300:run --press 400:i:8 --save 500,501
 bash tools/sim.sh --card CARD --disc CUE --arcade  # the Arcade System core setting: the card's RAM (AC_EN)
 bash tools/sim.sh --card CARD --disc CUE --change 900:/full/path/Other.cue --reset 1000   # another disc chosen in Core Settings, Reset core
+bash tools/sim.sh --card CARD --disc CUE --mb128 --save-in in.sav --save-out out.sav   # the Memory Base 128 setting; the Save slot through its real path
+bash tools/mb128-test.sh                           # the MB128 card against each kind of save, checked; five runs, about three minutes
 SIM_OUT=build/sim_b NO_BUILD=1 bash tools/sim.sh ... # on the build there is, into its own folder; several at once
 SIM_FW_PRINT=1 bash tools/sim.sh ...               # the firmware's mainprintf on stderr
 ```
@@ -26,8 +28,8 @@ Out, in `build/sim_pce/` or `SIM_OUT`:
 | `f_NNNNN.png` | the frames asked for: the picture as `core_top.v` gives it to the Pocket, through the real `linebuffer.v` |
 | `frames.txt` | every frame: its number, size, a CRC of its pixels and its top-left pixel, for comparing two runs |
 | `audio.wav` | `main.sv`'s `audio_l`, `audio_r`, 16-bit stereo at 48 kHz |
-| `drive.log` | each command to the drive and each stage of its load, with the frame and the firmware's millisecond; another disc chosen, the tray opening and shutting, the console told, Reset core |
-| `run.json` | the card and disc, the frames, the time, the speed, the drive's counters |
+| `drive.log` | each command to the drive and each stage of its load, with the frame and the firmware's millisecond; another disc chosen, the tray opening and shutting, the console told, Reset core; each MB128 ident, read and write a game asks for |
+| `run.json` | the card and disc, the frames, the time, the speed, the drive's counters, the PSRAM's self-test and its timing faults |
 
 **The test card** (`tools/testcard.py`, into `build/sim/test`) is the repo's own to commit: HuC6280 code
 written out by hand and a disc of two files with a PREGAP between. It resets the drive, waits
@@ -79,7 +81,8 @@ and no check reads it (docs/PLAN.md). MAME's picture is 1088 wide, four across t
 3. **The firmware for the Mac.** `drive.cpp` includes `cue.cpp`, `seektime.cpp`, `fileio.cpp` and
    `pcecd.cpp`, the sources that go on the card, unchanged, over `tests/host/host_stubs.h`.
 4. **Verilator** over `sim_top.sv`, `main.sv`, `audio.sv`, `linebuffer.v`, `hps_ext.v`, `color_mix.sv`,
-   `arcade.sv`, `bram.sv` (the memories those hold themselves), `sdram_sim.sv` and `main.cpp`.
+   `arcade.sv`, `mb128.sv`, `mb128_psram.sv`, `bram.sv` (the memories those hold themselves),
+   `sdram_sim.sv`, `psram_sim.sv` and `main.cpp`.
 
 ## What the harness does and does not model
 
@@ -101,8 +104,15 @@ and no check reads it (docs/PLAN.md). MAME's picture is 1088 wide, four across t
   only in idle slots.
 - **It is deterministic**: the same card, disc, presses and settings give the same frames, CRC for
   CRC.
-- Not here: saves loaded or written (`save_download`, `sd_wr` are tied off; the backup RAM starts
-  formatted as `main.sv` does it), the OSD, the settings menu, a second pad.
+- **The Save slot** goes through `main.sv`'s real path at `core_top.v`'s timing, in `main.cpp`
+  (`--save-in`, `--save-out`), though not through the dcfifos of `data_loader.sv` and
+  `data_unloader.sv`. With neither, the backup RAM starts formatted as `main.sv` does it. The size
+  written is `save_size.h`'s, the firmware's own.
+- **`psram_sim.sv`** stands in for the PSRAM: the real `mb128_psram.sv` drives it, and it counts
+  the datasheet's asynchronous timings in that module's clocks, gives rubbish for a read taken
+  early, starts in another core's synchronous mode and holds rubbish till cleared. It can't say
+  anything about the board's delays, which the module's timings leave whole clocks for.
+- Not here: the OSD, the settings menu, a second pad.
 - **A line is 257 wide at 5.37 MHz.** `tools/vdc-compare.sh`'s stand-in for the line buffer's writer
   counts 256: it takes `CE_FS`, and the real one takes `main.sv`'s `ce_pix`, half a clock later, so
   one more pixel gets past its border delay. The first or last pixel of a line isn't worth reading

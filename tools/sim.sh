@@ -2,7 +2,7 @@
 # The whole console in Verilator (src/sim/console): a system card and a disc in,
 # frames as PNGs and the sound as a WAV out, in build/sim_pce (src/sim/console/README.md).
 #   bash tools/sim.sh                                    the test card and test disc for 240 frames; checks what they report
-#   bash tools/sim.sh --card CARD --disc CUE [--frames N] [--every K] [--save F,F] [--press F:buttons[:N]] [--arcade] [--change F:CUE] [--reset F]
+#   bash tools/sim.sh --card CARD --disc CUE [--frames N] [--every K] [--save F,F] [--press F:buttons[:N]] [--arcade] [--change F:CUE] [--reset F] [--mb128] [--save-in F] [--save-out F]
 #   NO_BUILD=1 bash tools/sim.sh ...                     a run on the build there is
 #   SIM_OUT=DIR NO_BUILD=1 bash tools/sim.sh ...         somewhere else, for several at once
 # The build is kept in build/sim and made again only when a source changes.
@@ -90,11 +90,11 @@ FW_FLAGS=(-std=gnu++17 -O2 -w -Wno-c++11-narrowing -I"$B/fw/stubs" -I"$FW/driver
 )
 echo "Building the simulation (Verilator; some minutes the first time)"
 SRC=("$S/sim_top.sv" "$R/../main.sv" "$R/../audio.sv" "$R/../sys/iir_filter.v" "$R/../linebuffer.v"
-     "$R/hps_ext.v" "$R/color_mix.sv" "$R/arcade.sv" "$S/bram.sv" "$S/sdram_sim.sv" "$B/gen/pce_top.sv" "$S/main.cpp")
+     "$R/hps_ext.v" "$R/color_mix.sv" "$R/arcade.sv" "$R/mb128.sv" "$R/../mb128_psram.sv" "$S/psram_sim.sv" "$S/bram.sv" "$S/sdram_sim.sv" "$B/gen/pce_top.sv" "$S/main.cpp")
 verilator --cc --exe --build -j 0 -O3 --x-assign fast --x-initial fast --noassert \
   -Wno-fatal -Wno-lint -Wno-style -Wno-MULTIDRIVEN -Wno-COMBDLY -Wno-LATCH -Wno-UNOPTFLAT -Wno-INITIALDLY -Wno-PROCASSWIRE -Wno-MULTITOP \
   --top-module sim_top -Mdir "$B/obj" ${SIM_VFLAGS:-} \
-  -CFLAGS "-O2 -I$S" -LDFLAGS "-lz $B/fw/drive.o $B/fw/sscanf.o $B/fw/vscanf.o $B/fw/stropen.o" -MAKEFLAGS OPT_FAST=-O3 \
+  -CFLAGS "-O2 -I$S -I$PWD/src/cdfw/app" -LDFLAGS "-lz $B/fw/drive.o $B/fw/sscanf.o $B/fw/vscanf.o $B/fw/stropen.o" -MAKEFLAGS OPT_FAST=-O3 \
   "${SRC[@]}" > "$B/verilator.log" 2>&1 || { grep -E '%Error' "$B/verilator.log" | head -30; tail -5 "$B/verilator.log"; exit 1; }
 echo "3 of 3 build steps"
 }

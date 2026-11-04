@@ -5,6 +5,7 @@
 //
 //   Vsim_top --card FILE [--disc CUE] [--out DIR] [--frames N] [--every K] [--save 100,200]
 //            [--press F:buttons[:N] ...] [--arcade] [--change F:CUE ...] [--reset F ...]
+//            [--mb128] [--save-in FILE] [--save-out FILE] [--press-file FILE]
 //
 // Out, in DIR: f_NNNNN.png for each frame saved (the picture as core_top.v gives it to
 // the Pocket, through the real line buffer), frames.txt (each frame's number, size, a
@@ -20,6 +21,7 @@
 #include "Vsim_top.h"
 #include "verilated.h"
 #include "drive.h"
+#include "save_size.h"
 
 static Vsim_top *top;
 static uint64_t clocks;
@@ -35,6 +37,63 @@ static std::vector<Press> presses;
 struct Change { long at; std::string cue; };
 static std::vector<Change> changes;		// another disc chosen on the Pocket
 static std::vector<long> resets;		// the Reset core setting
+static std::string press_file;			// lines of F:buttons[:N], read as the run goes, to steer it from outside
+static long press_file_at;
+static std::string save_in, save_out;		// the Save slot: loaded before the card, written at the end
+static uint32_t save_loaded;
+static bool mb128_on;
+static int mb128_state;
+
+void sim_tick(uint32_t n);
+
+// The Save slot as the Pocket moves it, a word at a time with core_top.v's timing: the
+// data_loader's 8 of 16 clocks up, and the data_unloader's 16 before the data is taken.
+// The console is in reset meanwhile, by main.sv's save_download.
+static void save_word_at(uint32_t byte) {
+  top->sd_buff_addr = (byte >> 1) & 0xFF;
+  top->sd_lba = byte >> 9;
+}
+static void save_load(const std::string &path) {
+  FILE *f = fopen(path.c_str(), "rb");
+  if (!f) { fprintf(stderr, "no save %s\n", path.c_str()); exit(2); }
+  std::vector<uint8_t> d;
+  int c;
+  while ((c = fgetc(f)) != EOF) d.push_back(c);
+  fclose(f);
+  top->save_download = 1;
+  sim_tick(16);
+  for (size_t i = 0; i + 1 < d.size(); i += 2) {
+    save_word_at(i);
+    top->sd_buff_dout = d[i] | d[i + 1] << 8;
+    top->sd_wr = 1;
+    sim_tick(8);
+    top->sd_wr = 0;
+    sim_tick(8);
+  }
+  top->save_download = 0;
+  sim_tick(16);
+  save_loaded = d.size();
+}
+static void save_write(const std::string &path) {
+  // the size the firmware would leave in the slot table
+  uint32_t size = save_size(save_size(0, save_loaded, false), 0, mb128_on);
+  std::vector<uint8_t> d;
+  top->save_download = 1;
+  sim_tick(16);
+  for (uint32_t i = 0; i < size; i += 2) {
+    save_word_at(i);
+    top->sd_rd = 1;
+    sim_tick(16);
+    uint16_t w = top->sd_buff_din;
+    top->sd_rd = 0;
+    sim_tick(4);
+    d.push_back(w & 0xFF);
+    d.push_back(w >> 8);
+  }
+  top->save_download = 0;
+  FILE *f = fopen(path.c_str(), "wb");
+  if (f) { fwrite(d.data(), 1, d.size(), f); fclose(f); }
+}
 
 static const uint32_t AUDIO_HZ = 48000, CLK_HZ = 42954545;
 static uint32_t audio_acc;
@@ -97,6 +156,8 @@ static std::string json_escape(const std::string &s) {
 // ---- the end of a run, from wherever it comes: often inside the firmware ----
 static void finish() {
   fclose(frames_txt);
+  running = false;
+  if (!save_out.empty()) save_write(save_out);
   write_wav(out_dir + "/audio.wav", audio);
   char drive[512];
   drive_summary(drive, sizeof drive);
@@ -105,14 +166,38 @@ static void finish() {
   FILE *fj = fopen((out_dir + "/run.json").c_str(), "w");
   if (fj) {
     // rom and region say which run this was
-    fprintf(fj, "{\"rom\":\"%s\",\"region\":\"%s\",\"card\":\"%s\",\"disc\":\"%s\",\"frames\":%ld,\"saved\":%d,\"seconds\":%.1f,\"mhz\":%.2f,\"drive\":%s}\n",
+    fprintf(fj, "{\"rom\":\"%s\",\"region\":\"%s\",\"card\":\"%s\",\"disc\":\"%s\",\"frames\":%ld,\"saved\":%d,\"seconds\":%.1f,\"mhz\":%.2f,\"mb128\":%s,\"psram_ok\":%s,\"psram_violations\":%u,\"drive\":%s}\n",
             json_escape(disc_path.empty() ? card_path : disc_path).c_str(), strstr(drive, "\"region_us\":true") ? "USA" : "Japan",
-            json_escape(card_path).c_str(), json_escape(disc_path).c_str(), nframe, saved, s, clocks / s / 1e6, drive);
+            json_escape(card_path).c_str(), json_escape(disc_path).c_str(), nframe, saved, s, clocks / s / 1e6, mb128_on ? "true" : "false",
+            top->mb128_mem_ok ? "true" : "false", top->psram_violations, drive);
     fclose(fj);
   }
   printf("Done: %ld frames in %.0f s, %.2f MHz of 42.95; drive %s\n", nframe, s, clocks / s / 1e6, drive);
   fflush(stdout);
   exit(0);
+}
+
+static int button_bits(const std::string &names);
+static void add_press(const std::string &p) {
+  size_t c1 = p.find(':'), c2 = p.find(':', c1 == std::string::npos ? 0 : c1 + 1);
+  if (c1 == std::string::npos) { fprintf(stderr, "--press F:buttons[:N]\n"); exit(2); }
+  long f = atol(p.c_str());
+  long n = c2 == std::string::npos ? 4 : atol(p.c_str() + c2 + 1);
+  presses.push_back({f, f + n, button_bits(p.substr(c1 + 1, c2 == std::string::npos ? std::string::npos : c2 - c1 - 1))});
+}
+static void read_press_file() {
+  FILE *f = fopen(press_file.c_str(), "r");
+  if (!f) return;
+  fseek(f, press_file_at, SEEK_SET);
+  char l[128];
+  while (fgets(l, sizeof l, f)) {
+    if (!strchr(l, '\n')) break;		// a line still being written
+    press_file_at = ftell(f);
+    std::string p(l);
+    p.erase(p.find_last_not_of(" \r\n") + 1);
+    if (!p.empty()) add_press(p);
+  }
+  fclose(f);
 }
 
 static void frame_done() {
@@ -138,6 +223,7 @@ static void frame_done() {
   printf("%ld of %ld frames  (%dx%d, %.2f s a frame)\n", nframe, frames, w, h, s / nframe);
   fflush(stdout);
 
+  if (!press_file.empty()) read_press_file();
   int pad = 0;
   for (auto &p : presses) if (nframe >= p.from && nframe < p.to) pad |= p.bits;
   top->pad = pad;
@@ -149,6 +235,18 @@ void sim_tick(uint32_t n) {
   for (uint32_t i = 0; i < n; i++) {
     top->clk_sys = 1; top->clk_mem = 1; top->eval();
     clocks++;
+
+    // what a game asks of the MB128: rtl/mb128.sv's states 1, the ident, and 6 and 8, a read and a write
+    if (top->mb128_state != mb128_state) {
+      int st = top->mb128_state;
+      if (st == 1 || st == 6 || st == 8) {
+        char m[96];
+        if (st == 1) snprintf(m, sizeof m, "mb128 ident");
+        else snprintf(m, sizeof m, "mb128 %s sector %u, %u bits", st == 6 ? "read" : "write", top->mb128_addr >> 10, top->mb128_bits);
+        drive_log(m);
+      }
+      mb128_state = st;
+    }
 
     if (top->video_de) line.push_back(top->video_rgb & 0xFFFFFF);
     else if (!line.empty()) { lines.push_back(line); line.clear(); }
@@ -221,13 +319,12 @@ int main(int argc, char **argv) {
     else if (a == "--every") every = atol(next().c_str());
     else if (a == "--save") saves = "," + next() + ",";
     else if (a == "--arcade") arcade = true;
+    else if (a == "--mb128") mb128_on = true;
+    else if (a == "--press-file") press_file = next();
+    else if (a == "--save-in") save_in = next();
+    else if (a == "--save-out") save_out = next();
     else if (a == "--press") {
-      std::string p = next();
-      size_t c1 = p.find(':'), c2 = p.find(':', c1 == std::string::npos ? 0 : c1 + 1);
-      if (c1 == std::string::npos) { fprintf(stderr, "--press F:buttons[:N]\n"); return 2; }
-      long f = atol(p.c_str());
-      long n = c2 == std::string::npos ? 4 : atol(p.c_str() + c2 + 1);
-      presses.push_back({f, f + n, button_bits(p.substr(c1 + 1, c2 == std::string::npos ? std::string::npos : c2 - c1 - 1))});
+      add_press(next());
     }
     else if (a == "--change") {
       std::string p = next();
@@ -250,8 +347,15 @@ int main(int argc, char **argv) {
   top->eval();
   top->core_reset = 1;
   top->ac_en = arcade;
+  top->mb128_en = mb128_on;
   drive_open(card_path.c_str(), disc_path.c_str(), out_dir.c_str());
   sim_tick(2000);
+
+  // core_top.v holds the Pocket's boot status until this, and the slots load after it
+  while (!top->mb128_ready) sim_tick(1000);
+  printf("PSRAM ready at %.1f ms, %s, %u timing faults\n", clocks * 1e3 / CLK_HZ, top->mb128_mem_ok ? "its test words read back" : "ITS TEST WORDS DID NOT READ BACK", top->psram_violations);
+  fflush(stdout);
+  if (!save_in.empty()) save_load(save_in);
 
   // The system card through the real path: main.sv's ROM size and header come from
   // this, as they do from core_top.v's data loader.

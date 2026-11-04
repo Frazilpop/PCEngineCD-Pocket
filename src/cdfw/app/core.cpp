@@ -77,8 +77,8 @@ void core_reg_update(){
 	// if (old_region != AFP_REGISTOR(1) & 0x1) full_core_reset();
 	// Arcade Setup
 
-	if (AFP_REGISTOR(1) & 0x2) CORE_OUTPUT_REGISTOR() = 0x2;
-	else CORE_OUTPUT_REGISTOR() = 0x0;
+	// Bit 1, the Arcade Card, as asked; bit 2, the Memory Base 128 (core_top.v's mb128_enable).
+	CORE_OUTPUT_REGISTOR() = AFP_REGISTOR(1) & 0x6;
 	// if (old_arcade != AFP_REGISTOR(1) & 0x2) full_core_reset();
 
 };

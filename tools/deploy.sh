@@ -19,8 +19,9 @@
 #
 # A bitstream older than BITSTREAM_NOT_BEFORE isn't deployed: each Mac builds its
 # own, so one can have this firmware and a bitstream from before a change between
-# the two. Set it when such a change goes in. The last, 3 Nov 2026: subcode goes
-# as a transfer of its own, which an older bitstream plays as noise.
+# the two. Set it when such a change goes in. The last, 4 Nov 2026: the save slot
+# holds the MB128 in the PSRAM, and this firmware makes it 130K when asked, which an
+# older bitstream would fill with nonsense.
 #
 # One copy to the card at a time, under /tmp/pocket-card.lock (shared with the
 # other cores' deploy scripts). Nothing ejects the card.
@@ -33,7 +34,7 @@ DIST="$REPO/dist"
 BIN="$DIST/Cores/$CORE/bitstream.rbf_r"
 FW="$DIST/Assets/pcecd/$CORE/pce_mpu_bios.bin"
 RECORD="$REPO/build/deployed.txt"
-BITSTREAM_NOT_BEFORE="2026-11-03 15:22"
+BITSTREAM_NOT_BEFORE="2026-11-04 15:05"
 [ -f "$BIN" ] || { echo "no $BIN - run tools/build.sh first"; exit 1; }
 
 VOL="" STATUS=0

@@ -85,6 +85,7 @@ module pce (
 
     // Data out
     input wire sd_wr,
+    input wire sd_rd,
     input wire [7:0] sd_buff_addr,
     input wire [16:0] sd_lba,
     input wire [15:0] sd_buff_dout,
@@ -101,7 +102,21 @@ module pce (
     output wire        dram_ras_n,
     output wire        dram_cas_n,
     output wire        dram_we_n,
-	 
+
+    // The first PSRAM chip: the MB128's memory (mb128_psram.sv)
+    output wire [21:16] cram0_a,
+    inout  wire [15:0]  cram0_dq,
+    output wire         cram0_clk,
+    output wire         cram0_adv_n,
+    output wire         cram0_cre,
+    output wire         cram0_ce0_n,
+    output wire         cram0_ce1_n,
+    output wire         cram0_oe_n,
+    output wire         cram0_we_n,
+    output wire         cram0_ub_n,
+    output wire         cram0_lb_n,
+    output wire         mb128_ready,
+    output wire         mb128_mem_ok,
 
     // Video
     output reg ce_pix,
@@ -718,10 +733,59 @@ end
   /////////////////////////  BACKUP RAM SAVE/LOAD  /////////////////////////////
 
   wire [15:0] mb128_dout;
-  // wire mb128_dirty;
   wire mb128_ena = mb128_enable;
   wire mb128_Active;
   wire [3:0] mb128_Data;
+  wire [19:0] mb128_ram_addr;
+  wire mb128_ram_din, mb128_ram_we, mb128_ram_dout;
+
+  MB128 MB128 (
+      .reset(reset | cart_download),
+      .clk_sys(clk_sys_42_95),
+
+      .i_Clk(mb128_ena & joy_out[1]),  // send only if MB128 enabled
+      .i_Data(joy_out[0]),
+
+      .o_Active(mb128_Active),  // high if MB128 asserts itself instead of joypad inputs
+      .o_Data(mb128_Data),
+
+      .ram_addr(mb128_ram_addr),
+      .ram_din(mb128_ram_din),
+      .ram_we(mb128_ram_we),
+      .ram_dout(mb128_ram_dout)
+  );
+
+  // The save slot is MiSTer's: 2K of backup RAM in sectors 0 to 3, then the MB128.
+  mb128_psram mb128_psram (
+      .clk(clk_sys_42_95),
+      .locked(pll_core_locked),
+
+      .ready(mb128_ready),
+      .mem_ok(mb128_mem_ok),
+
+      .mb_addr(mb128_ram_addr),
+      .mb_din(mb128_ram_din),
+      .mb_we(mb128_ram_we),
+      .mb_dout(mb128_ram_dout),
+
+      .bk_addr({sd_lba[7:0] - 8'd4, sd_buff_addr}),
+      .bk_din(sd_buff_dout),
+      .bk_dout(mb128_dout),
+      .bk_we(~bk_int & sd_wr),
+      .bk_rd(~bk_int & sd_rd),
+
+      .cram_a(cram0_a),
+      .cram_dq(cram0_dq),
+      .cram_clk(cram0_clk),
+      .cram_adv_n(cram0_adv_n),
+      .cram_cre(cram0_cre),
+      .cram_ce0_n(cram0_ce0_n),
+      .cram_ce1_n(cram0_ce1_n),
+      .cram_oe_n(cram0_oe_n),
+      .cram_we_n(cram0_we_n),
+      .cram_ub_n(cram0_ub_n),
+      .cram_lb_n(cram0_lb_n)
+  );
 
 
   wire [10:0] bram_addr;

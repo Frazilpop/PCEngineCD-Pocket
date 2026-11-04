@@ -762,6 +762,7 @@ set_global_assignment -name VHDL_FILE core/rtl/CEGen.vhd
 set_global_assignment -name SYSTEMVERILOG_FILE core/rtl/cache_2way.sv
 set_global_assignment -name SYSTEMVERILOG_FILE core/rtl/arcade.sv
 set_global_assignment -name SYSTEMVERILOG_FILE core/main.sv
+set_global_assignment -name SYSTEMVERILOG_FILE core/mb128_psram.sv
 set_global_assignment -name SYSTEMVERILOG_FILE core/sync_fifo.sv
 set_global_assignment -name SYSTEMVERILOG_FILE core/sound_i2s.sv
 set_global_assignment -name SYSTEMVERILOG_FILE core/data_unloader.sv
