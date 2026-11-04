@@ -26,3 +26,7 @@ src/sim/*.bin
 *.ci
 *.su
 src/cdfw/tests/host/build/
+
+# Working notes, kept on this Mac and never published.
+/CLAUDE.md
+/docs/
