@@ -124,11 +124,15 @@ public:
 	bool data_req;
 	bool can_read_next;
 	int tracks_read;
+	bool tray_open;		// the console is told there's no disc
+	bool disc_changed;	// its next command that needs a disc is told once that it changed
 
 	cue_t();
 	uint16_t Load(int dataslot);
 	void Unload();
 	void Reset();
+	void OpenTray();
+	void CloseTray();
 	void Update();
 	void CommandExec();
 	uint16_t GetStatus();
@@ -170,6 +174,7 @@ private:
 	uint16_t LoadCUE(int dataslot);
 	void EndTrack(int i);
 	uint32_t FilePos(int i, int lba);
+	void ForgetSubcode();
 	void OpenSubcode(const char *cue_name);
 	bool SubcodeFromFile(int lba, uint8_t *subc);
 	void ReadSubcode();
@@ -201,5 +206,6 @@ void pcecd_set_image(int dataslot, int size); // Done
 int pcecd_send_data(uint8_t* buf, int len, uint8_t index); // Need to work on
 void pcecd_reset(); // done
 int pcecd_using_cd(); // done
+void pcecd_change_disc();
 
 #endif

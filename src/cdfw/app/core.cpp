@@ -57,16 +57,6 @@ void full_core_reset(){
 	riscusleep(50000);
 	mainprintf("Completed the reset\r\n");
 }
-// Update dataslots
-
-void core_update_dataslots(){
-  	int tmp = DATASLOT_UPDATE_REG(1);
-	pcecd_set_image(DATASLOT_BRAM(0), DATASLOT_BRAM(1));
-	HPS_spi_uio_cmd8_cont(UIO_SET_SDSTAT, 1);
-	HPS_DisableIO();
-	mainprintf("UPLOADS\r\n");
-};
-
 void core_poll_io(){
 	pcecd_poll();
       // Here is where you do your polling on the core - eg Floppy and CDROM data

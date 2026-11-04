@@ -103,9 +103,23 @@ void RISCFileCacheSize(uint32_t size) { cache_size = size; }
 void RISCFileCopy(uint8_t *dst, uint32_t len) { for (uint32_t i = 0; i < len; i++) dst[i] = (uint8_t)(last_seek + i); }
 bool dataslot_ready() { return true; }
 void HPS_DisableIO() {}
-uint16_t spi_w(uint16_t) { return 0; }
 static int statuses;	// what SendStatus has sent
-uint16_t HPS_spi_uio_cmd_cont(uint16_t cmd) { if (cmd == UIO_CD_SET) statuses++; return 0; }
+static uint16_t last_status;	// the last of them, or for SendDataRequest its first word
+static bool status_next;
+uint16_t spi_w(uint16_t word)
+{
+	if (status_next) last_status = word;
+	status_next = false;
+	return 0;
+}
+uint16_t HPS_spi_uio_cmd_cont(uint16_t cmd)
+{
+	if (cmd == UIO_CD_SET) {
+		statuses++;
+		status_next = true;
+	}
+	return 0;
+}
 void osd_display_timing(uint8_t, uint8_t, uint8_t) {}
 void osd_trace_stage(char) {}
 int mainprintf(const char *, ...) { return 0; }
@@ -852,6 +866,232 @@ static void test_cdg_track_subcode()
 	for (int i = 0; i < 96; i++) CHECK(sent_subcode[0][4 + i] == (uint8_t)(10 * 2448 + 2352 + i));
 }
 
+/* ------------------------------------------------------------- another disc */
+
+// What pcecd.cpp's tray_poll does, and pcecd_set_image's half of it.
+static int change_disc(const std::string &path, const std::string &text)
+{
+	cue_path = path;
+	cue_text = text;
+	fake_dataslot_bram[1] = text.size();
+	opens.clear();
+	sub_opens.clear();
+	cue.OpenTray();
+	cue.Unload();
+	uint16_t ret = cue.Load(101);
+	cue.state = (ret == 1) ? CD_STATE_IDLE : CD_STATE_NODISC;
+	if (ret != 1) cue.Unload();
+	return ret;
+}
+
+static std::string one_bin_cue(const std::string &bin)
+{
+	return "FILE \"" + bin + "\" BINARY\n  TRACK 01 MODE1/2352\n    INDEX 01 00:00:00\n";
+}
+
+static void check_sense(uint8_t key, uint8_t asc)
+{
+	command(CD_COMM_REQUESTSENSE);
+	CHECK(sent.size() == 20);
+	CHECK(sent[4] == key);
+	CHECK(sent[14] == asc);
+}
+
+// 46 files to one and back: nothing of the old disc left in the TOC, and the same TOC
+// as a first load finds. MiSTer's Unload clears the whole of it; this one cleared the tracks
+// it had counted, and left their names and the lead-out's address.
+static void test_change_lets_go_of_the_old_disc()
+{
+	const std::string dir46 = common + game + "/", one = common + "One/";
+	sd_card.clear();
+	put_bins(dir46, 46);
+	sd_card[one + "one.bin"] = 2352 * 500;
+	const std::string cue46 = dir46 + game + ".cue", text46 = redump_cue("", 46), text1 = one_bin_cue("one.bin");
+
+	result r46 = load(cue46, text46);
+	CHECK(r46.ret == 1);
+	CHECK(r46.toc.last == 46);
+	result r1 = load(one + "one.cue", text1);
+	CHECK(r1.ret == 1);
+
+	load(cue46, text46);
+	CHECK(change_disc(one + "one.cue", text1) == 1);
+	CHECK(cue.loaded == 1);
+	CHECK(same_toc(cue.toc, r1.toc));
+	CHECK(opens == std::vector<std::string>({one + "one.bin"}));
+	for (int i = 1; i < 100; i++) {
+		CHECK(cue.toc.tracks[i].name[0] == 0);
+		CHECK(cue.toc.tracks[i].end == 0);
+		if (i > 1) CHECK(cue.toc.tracks[i].start == 0);
+	}
+	CHECK(cue.toc.tracks[1].start == cue.toc.end);	// the lead-out, and not track 2's start
+	CHECK(!strcmp(aft.aft_filepath, one.c_str()));	// RISCFileSeek reopens tracks in this folder
+
+	CHECK(change_disc(cue46, text46) == 1);
+	CHECK(same_toc(cue.toc, r46.toc));
+	CHECK(opens == track_paths(dir46, 46));
+	CHECK(!overflow);
+}
+
+// A .sub is for its own disc: the read cache goes back to full size with the next one,
+// and a load that fails leaves none of it either.
+static void test_change_lets_go_of_the_subcode()
+{
+	const std::string dir = common + "Karaoke/", one = common + "One/", none = common + "None/";
+	sub_file.assign(96 * 100, 'x');
+	sd_card.clear();
+	sd_card[dir + "k.bin"] = 2352 * 100;
+	sd_card[dir + "k.sub"] = sub_file.size();
+	sd_card[one + "one.bin"] = 2352 * 100;
+	const std::string karaoke = "FILE k.bin BINARY\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n";
+
+	load(dir + "k.cue", karaoke);
+	cue.SendData = capture;
+	CHECK(sub_size == 96 * 100);
+	CHECK(cache_size == SECTOR_CACHE_SIZE_SUB);
+	CHECK(change_disc(one + "one.cue", one_bin_cue("one.bin")) == 1);
+	CHECK(sub_size == 0);
+	CHECK(sub_last_lba == -1);
+	CHECK(cache_size == SECTOR_CACHE_SIZE);
+	CHECK(sub_opens == std::vector<std::string>({one + "one.sub"}));
+
+	load(dir + "k.cue", karaoke);
+	cue.SendData = capture;
+	CHECK(cache_size == SECTOR_CACHE_SIZE_SUB);
+	CHECK(change_disc(none + "gone.cue", one_bin_cue("gone.bin")) == 2);
+	CHECK(cue.loaded == 0);
+	CHECK(cue.toc.last == 0);
+	CHECK(sub_size == 0);
+	CHECK(cache_size == SECTOR_CACHE_SIZE);
+	cue.CloseTray();
+	CHECK(!cue.disc_changed);	// nothing changed to: there's no disc
+	command(CD_COMM_TESTUNIT);
+	CHECK(last_status == MAKE_STATUS(CD_STATUS_CHECK_COND, 0));
+	check_sense(SENSEKEY_NOT_READY, NSE_NO_DISC);
+
+	// and the disc after that one is as good as a first
+	CHECK(change_disc(dir + "k.cue", karaoke) == 1);
+	CHECK(sub_size == 96 * 100);
+	CHECK(cache_size == SECTOR_CACHE_SIZE_SUB);
+}
+
+// What the console hears, while the tray is open and after.
+static void test_tray()
+{
+	three_tracks();
+	statuses = 0;
+	cue.OpenTray();
+	CHECK(statuses == 0);	// nothing was waiting on the drive, so nothing is sent
+	CHECK(cue.state == CD_STATE_NODISC);
+
+	const uint8_t need_disc[] = {CD_COMM_TESTUNIT, CD_COMM_READ6, CD_COMM_SAPSP, CD_COMM_SAPEP, CD_COMM_PAUSE, CD_COMM_READSUBQ, CD_COMM_GETDIRINFO};
+	for (uint8_t c : need_disc) {
+		command(c);
+		CHECK(statuses == 1);
+		CHECK(last_status == MAKE_STATUS(CD_STATUS_CHECK_COND, 0));
+		CHECK(cue.state == CD_STATE_NODISC);
+		CHECK(!cue.subq_pend);
+		check_sense(SENSEKEY_NOT_READY, NSE_TRAY_OPEN);
+	}
+	command(CD_COMM_MODESELECT6);	// no disc needed
+	CHECK(last_status == MAKE_STATUS(CD_STATUS_GOOD, 0));
+
+	// a drive reset from the game doesn't shut it
+	cue.Reset();
+	command(CD_COMM_TESTUNIT);
+	CHECK(last_status == MAKE_STATUS(CD_STATUS_CHECK_COND, 0));
+	check_sense(SENSEKEY_NOT_READY, NSE_TRAY_OPEN);
+
+	// the load's state stands behind the open tray
+	cue.state = CD_STATE_IDLE;
+	command(CD_COMM_READ6, 0, 0, 0, 1);
+	CHECK(cue.state == CD_STATE_IDLE);
+	check_sense(SENSEKEY_NOT_READY, NSE_TRAY_OPEN);
+
+	cue.CloseTray();
+	CHECK(cue.disc_changed);
+	command(CD_COMM_READ6, 0, 0, 0, 1);	// told once, whatever the command, and not done
+	CHECK(last_status == MAKE_STATUS(CD_STATUS_CHECK_COND, 0));
+	CHECK(cue.state == CD_STATE_IDLE);
+	CHECK(!cue.disc_changed);
+	check_sense(SENSEKEY_UNIT_ATTENTION, NSE_DISC_CHANGED);
+	command(CD_COMM_TESTUNIT);
+	CHECK(last_status == MAKE_STATUS(CD_STATUS_GOOD, 0));
+	command(CD_COMM_GETDIRINFO);
+	CHECK(sent[3] == 3);	// the disc answers again
+
+	// a reset with the news not yet told: it's still told, as Mednafen's
+	cue.OpenTray();
+	cue.state = CD_STATE_IDLE;
+	cue.CloseTray();
+	cue.Reset();
+	command(CD_COMM_TESTUNIT);
+	CHECK(last_status == MAKE_STATUS(CD_STATUS_CHECK_COND, 0));
+	check_sense(SENSEKEY_UNIT_ATTENTION, NSE_DISC_CHANGED);
+}
+
+// A command that hasn't had its status would wait for it for ever, so it gets one, and
+// only one, and nothing goes on after it.
+static void test_tray_opens_on_a_waiting_command()
+{
+	three_tracks();
+	command(CD_COMM_READ6, 0, 0x34, 0x00, 8);	// the data track, in the middle of a read
+	CHECK(cue.state == CD_STATE_READ);
+	CHECK(statuses == 0);
+	cue.OpenTray();
+	CHECK(statuses == 1);
+	CHECK(last_status == MAKE_STATUS(CD_STATUS_CHECK_COND, 0));
+	tick(10);
+	CHECK(statuses == 1);
+	CHECK(!cue.has_status);
+	check_sense(SENSEKEY_NOT_READY, NSE_TRAY_OPEN);
+
+	// a play that was to interrupt at its end
+	three_tracks();
+	command(CD_COMM_SAPSP, CD_CDDAMODE_NORMAL, 0x00, 0x00, 0x00, 0x00);
+	command(CD_COMM_SAPEP, CD_CDDAMODE_INTERRUPT, 0x00, 0x00, 0x10, 0x00);
+	CHECK(statuses == 0);
+	CHECK(cue.int_pend);
+	cue.OpenTray();
+	CHECK(statuses == 1);
+	CHECK(last_status == MAKE_STATUS(CD_STATUS_CHECK_COND, 0));
+	tick(10);
+	CHECK(statuses == 1);
+
+	// READ SUBQ, answered on the next tick
+	three_tracks();
+	command(CD_COMM_READSUBQ);
+	CHECK(statuses == 0);
+	cue.OpenTray();
+	CHECK(statuses == 1);
+	tick(2);
+	CHECK(statuses == 1);
+	CHECK(sent.empty());
+
+	// a status put off until the seek's done
+	three_tracks();
+	command(CD_COMM_SAPSP, CD_CDDAMODE_SILENT, 0x00, 0x00, 0x00, 0x00);
+	CHECK(cue.has_status);
+	statuses = 0;
+	cue.OpenTray();
+	CHECK(statuses == 1);
+	CHECK(!cue.has_status);
+
+	// music playing with nothing waiting: it stops and the console isn't told until it asks
+	three_tracks();
+	command(CD_COMM_SAPSP, CD_CDDAMODE_NORMAL, 0x00, 0x00, 0x00, 0x00);
+	cue.has_status = 0;
+	command(CD_COMM_SAPEP, CD_CDDAMODE_NORMAL, 0x00, 0x00, 0x10, 0x00);
+	CHECK(cue.state == CD_STATE_PLAY);
+	statuses = 0;
+	cue.OpenTray();
+	CHECK(statuses == 0);
+	sent_subcode.clear();
+	tick(5);
+	CHECK(sent_subcode.empty());
+	CHECK(statuses == 0);
+}
+
 int main()
 {
 	test_resolve();
@@ -878,6 +1118,10 @@ int main()
 	test_subcode_file();
 	test_subcode_short_name();
 	test_cdg_track_subcode();
+	test_change_lets_go_of_the_old_disc();
+	test_change_lets_go_of_the_subcode();
+	test_tray();
+	test_tray_opens_on_a_waiting_command();
 	printf("%s: %d of %d checks failed\n", failures ? "FAILED" : "OK", failures, checks);
 	return failures != 0;
 }

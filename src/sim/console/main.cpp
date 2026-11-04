@@ -4,7 +4,7 @@
 // README.md beside this file.
 //
 //   Vsim_top --card FILE [--disc CUE] [--out DIR] [--frames N] [--every K] [--save 100,200]
-//            [--press F:buttons[:N] ...] [--arcade]
+//            [--press F:buttons[:N] ...] [--arcade] [--change F:CUE ...] [--reset F ...]
 //
 // Out, in DIR: f_NNNNN.png for each frame saved (the picture as core_top.v gives it to
 // the Pocket, through the real line buffer), frames.txt (each frame's number, size, a
@@ -32,6 +32,9 @@ static uint64_t run_from;		// the clock the console left reset
 
 struct Press { long from, to; int bits; };
 static std::vector<Press> presses;
+struct Change { long at; std::string cue; };
+static std::vector<Change> changes;		// another disc chosen on the Pocket
+static std::vector<long> resets;		// the Reset core setting
 
 static const uint32_t AUDIO_HZ = 48000, CLK_HZ = 42954545;
 static uint32_t audio_acc;
@@ -226,6 +229,13 @@ int main(int argc, char **argv) {
       long n = c2 == std::string::npos ? 4 : atol(p.c_str() + c2 + 1);
       presses.push_back({f, f + n, button_bits(p.substr(c1 + 1, c2 == std::string::npos ? std::string::npos : c2 - c1 - 1))});
     }
+    else if (a == "--change") {
+      std::string p = next();
+      size_t c = p.find(':');
+      if (c == std::string::npos) { fprintf(stderr, "--change F:CUE\n"); return 2; }
+      changes.push_back({atol(p.c_str()), p.substr(c + 1)});
+    }
+    else if (a == "--reset") resets.push_back(atol(next().c_str()));
     else { fprintf(stderr, "what is %s?\n", a.c_str()); return 2; }
   }
   if (card_path.empty()) { fprintf(stderr, "--card FILE: a system card, or tools/testcard.py's\n"); return 2; }
@@ -269,6 +279,16 @@ int main(int argc, char **argv) {
   // The firmware's main loop for ever; finish() ends it at the last frame.
   for (;;) {
     sim_tick(100);
+    for (auto &c : changes) if (c.at == nframe) { drive_change_disc(c.cue.c_str()); c.at = -1; }
+    for (auto &r : resets) if (r == nframe) {
+      // firmware's full_core_reset: the reset held 50 ms, and 50 ms more before it goes on
+      r = -1;
+      drive_log("reset core");
+      top->core_reset = 1;
+      sim_tick(CLK_HZ / 20);
+      top->core_reset = 0;
+      sim_tick(CLK_HZ / 20);
+    }
     drive_poll();
   }
 }

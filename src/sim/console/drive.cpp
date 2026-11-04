@@ -269,10 +269,28 @@ void drive_open(const char *card, const char *cue, const char *out_dir)
 	aft.aft_dataslot = 101;
 }
 
+void drive_log(const char *what)
+{
+	if (log_file) { fprintf(log_file, "%ld %u %s\n", sim_frame(), RISCGetTimer2(0), what); fflush(log_file); }
+}
+
+void drive_change_disc(const char *cue)
+{
+	cue_path = cue;
+	if (!open_slot(100, cue)) {
+		fprintf(stderr, "can't read the disc's CUE %s\n", cue);
+		exit(2);
+	}
+	fake_dataslot_bram[1] = slots[100].size;
+	drive_log((std::string("disc chosen ") + cue).c_str());
+	pcecd_change_disc();
+}
+
 // a pass of main.cpp's mainloop: core_poll_io, core_reg_update
 void drive_poll()
 {
 	static uint32_t commands, resets;
+	static bool tray_open, disc_changed;
 	cue.SetRegion(bios_us ? 1 : 0);
 	cue.SetFastSeek(false);
 	pcecd_poll();
@@ -284,6 +302,10 @@ void drive_poll()
 		fprintf(log_file, " resets %u state %d lba %d\n", resets, (int)cue.state, cue.CurrentLBA());
 		fflush(log_file);
 	}
+	if (cue.tray_open != tray_open) drive_log(cue.tray_open ? "tray open" : "tray shut");
+	if (disc_changed && !cue.disc_changed) drive_log("told the disc changed");
+	tray_open = cue.tray_open;
+	disc_changed = cue.disc_changed;
 }
 
 void drive_close()

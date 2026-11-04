@@ -70,7 +70,6 @@ extern uint32_t dataslot_open_error;
 #define error_info_dataslot_File_Not_Found 2;
 #define error_info_dataslot_Load_Faild 3;
 #define error_info_dataslot_save_Faild 4;
-#define error_info_Core_data_slot_change 6;
 
 #define MAIN_ADDRESS_OFFSET          0x00000000 // We want to make sure we advise the APF where the BRAM is of the CPU
 #define MAIN_SCRACH_ADDRESS_OFFSET   0x01000000 // We want to make sure we advise the APF where the BRAM is of the CPU

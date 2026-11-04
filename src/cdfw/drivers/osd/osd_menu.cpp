@@ -103,49 +103,6 @@ void osd_display_timing (uint8_t n1, uint8_t n2, uint8_t n3){
 }
 
 void osd_display_error_dataslot (int data_error){
-  switch(data_error)
-  {
-  case 6:
-    OsdWrite("-----------Core Error----------");
-    OsdUpdate(0);
-    OsdClear();
-    OsdWrite("This function is not added yet");
-    OsdUpdate(1);
-    OsdClear();
-    OsdWrite("Please quit the core and reload");
-    OsdUpdate(2);
-    OsdClear();
-    OsdWrite("the game that you want to play");
-    OsdUpdate(3);
-    OsdClear();
-    OsdWrite("      upcoming function");
-    OsdUpdate(4);
-    OsdClear();
-    OsdWrite("Now Im just wasting codespace" );
-    OsdUpdate(5);
-    OsdClear();
-    OsdWrite("ULTRAFP64 is a pain in the ass");
-    OsdUpdate(6);
-    OsdClear();
-    OsdWrite("Im also one too, but I drink");
-    OsdUpdate(7);
-    OsdClear();
-    OsdWrite("more. Will Fix later YAY - MAZA  ");
-    OsdUpdate(8);
-    OsdClear();
-    OsdWrite("ULTRAFP64 COMING SOON");
-    OsdUpdate(9);
-    OsdClear();
-    OsdWrite("------------------------------");
-    OsdUpdate(10);
-    OsdClear();
-    OsdWrite("I hate that guy Maza - UFP64");
-    OsdUpdate(11);
-    OsdClear();
-    InfoEnable(5, 80, 31, 12, 192, 65535); // Had to use the info as some of the PCE outputs are smaller
-    break;
-
-  default:
     sprintf (s, "-------DataFile Error---- %d", data_error);
     OsdWrite(s);
     OsdUpdate(0);
@@ -211,8 +168,6 @@ void osd_display_error_dataslot (int data_error){
     OsdUpdate(14);
     OsdClear();
     InfoEnable(10, 80, 30, 15, 192, 65535); // Had to use the info as some of the PCE outputs are smaller
-    break;
-  }
 
 
 

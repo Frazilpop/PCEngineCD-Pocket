@@ -13,6 +13,8 @@ uint16_t sim_spi_word(uint16_t word);	// one word on the bus, waiting on IO_WAIT
 // drive.cpp's: the firmware's own drive on the Mac.
 void drive_open(const char *card, const char *cue, const char *out_dir);
 void drive_poll();						// one pass of the firmware's main loop
+void drive_change_disc(const char *cue);	// the player chose another disc on the Pocket: a new line in the slot table, and the update
+void drive_log(const char *what);		// a line in drive.log
 void drive_close();
 void drive_summary(char *json, int size);	// run.json's "drive" object
 #endif

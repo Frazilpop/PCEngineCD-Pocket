@@ -29,6 +29,8 @@ cue_t::cue_t() {
 	fast_seek = false;
 	int_pend = false;
 	subq_pend = false;
+	tray_open = false;
+	disc_changed = false;
 
 	stat = 0x0000;
 
@@ -388,6 +390,16 @@ uint16_t cue_t::LoadCUE(int dataslot) {
 	return 1;
 }
 
+// The last disc's subcode, and what's in the read cache, which is smaller with a .sub.
+void cue_t::ForgetSubcode()
+{
+	sub_size = 0;
+	sub_count = 0;
+	sub_last_lba = -1;
+	memset(sub_tx + 4, 0, 96);
+	RISCFileCacheSize(SECTOR_CACHE_SIZE);
+}
+
 // A .sub beside the CUE, with the CUE's name, as MiSTer looks for: one file for the
 // whole disc, at lba * 96. Most discs have none, and that isn't an error.
 void cue_t::OpenSubcode(const char *cue_name)
@@ -396,11 +408,7 @@ void cue_t::OpenSubcode(const char *cue_name)
 	int error_code = file_error_code;
 	uint32_t open_error = dataslot_open_error;
 
-	sub_size = 0;
-	sub_count = 0;
-	sub_last_lba = -1;
-	memset(sub_tx + 4, 0, 96);
-	RISCFileCacheSize(SECTOR_CACHE_SIZE);
+	ForgetSubcode();
 
 	int len = snprintf(path, CUE_PATH_MAX, "%s%s", cue_dir, cue_name);
 	if ((len >= 4) && (len < CUE_PATH_MAX)) {
@@ -434,33 +442,10 @@ return 0;
 
 void cue_t::Unload()
 {
-	if (this->loaded)
-	{
-
-
-		for (int i = 0; i < this->toc.last; i++)
-			{
-				this->toc.tracks[i].dataslot = 0;
-				this->toc.tracks[i].first = 0;
-				this->toc.tracks[i].size = 0;
-				this->toc.tracks[i].offset = 0;
-				this->toc.tracks[i].pregap = 0;
-				this->toc.tracks[i].start = 0;
-				this->toc.tracks[i].end = 0;
-				this->toc.tracks[i].type = 0;
-				this->toc.tracks[i].sector_size = 0;
-				// sprintf(this->toc.tracks[i].name,"");
-				// int j = 0;
-				// do{
-					// this->toc.tracks[i].name = NULL;
-					// j++;
-				// }while(j < 128);
-			}
-			this->loaded = 0;
-			this->toc.end=0;
-			this->toc.last=0;
-	}
-	 mainprintf ("Im Here Father %d \r\n", this->toc.last);
+	this->loaded = 0;
+	memset((void *)&this->toc, 0, sizeof(this->toc));
+	// A load that fails has no OpenSubcode of its own to do this.
+	ForgetSubcode();
 }
 
 void cue_t::Reset() {
@@ -483,6 +468,32 @@ void cue_t::Reset() {
 	subq_pend = false;
 	stat = 0x0000;
 
+}
+
+// Another disc, with the console left running. MiSTer has none of this: its load sends
+// the system card again, which restarts the console, so nothing ever sees the disc go.
+// Here a game that asks for its next disc keeps its RAM, as on a real console, and
+// Reset core is one line away in the same menu for a game that doesn't. What the console
+// hears is as Mednafen's drive has it (PCECD_Drive_SetDisc): NOT READY while the tray is
+// open, and UNIT ATTENTION once after it shuts.
+void cue_t::OpenTray()
+{
+	// A command that hasn't had its status would wait for it for ever: it gets this one.
+	bool owed = has_status || data_req || int_pend || subq_pend || (state == CD_STATE_READ);
+	Reset();
+	tray_open = true;
+	disc_changed = false;
+	state = CD_STATE_NODISC;
+	if (owed) {
+		CommandError(SENSEKEY_NOT_READY, NSE_TRAY_OPEN, 0, 0);
+		SendStatus(MAKE_STATUS(CD_STATUS_CHECK_COND, 0));
+	}
+}
+
+void cue_t::CloseTray()
+{
+	tray_open = false;
+	disc_changed = loaded;
 }
 
 void cue_t::Update() {
@@ -665,16 +676,37 @@ void cue_t::CommandExec() {
 	// still pending sends its status in the middle of a later command.
 	this->int_pend = false;
 
+	// MiSTer asks this of TEST UNIT READY alone, as a console there never sees a disc go
+	// while it's running. Here it can, and with no TOC a READ would never get its status.
+	// The commands are those of Mednafen's SCF_REQUIRES_MEDIUM.
 	switch (comm[0]) {
 	case CD_COMM_TESTUNIT:
-		if (state == CD_STATE_NODISC) {
-			CommandError(SENSEKEY_NOT_READY, NSE_NO_DISC, 0, 0);
+	case CD_COMM_READ6:
+	case CD_COMM_SAPSP:
+	case CD_COMM_SAPEP:
+	case CD_COMM_PAUSE:
+	case CD_COMM_READSUBQ:
+	case CD_COMM_GETDIRINFO:
+		if (tray_open || (state == CD_STATE_NODISC) || disc_changed) {
+			if (tray_open) CommandError(SENSEKEY_NOT_READY, NSE_TRAY_OPEN, 0, 0);
+			else if (state == CD_STATE_NODISC) CommandError(SENSEKEY_NOT_READY, NSE_NO_DISC, 0, 0);
+			else {
+				CommandError(SENSEKEY_UNIT_ATTENTION, NSE_DISC_CHANGED, 0, 0);
+				disc_changed = false;
+			}
+			has_status = 0;
 			SendStatus(MAKE_STATUS(CD_STATUS_CHECK_COND, 0));
+			return;
 		}
-		else {
-			SendStatus(MAKE_STATUS(CD_STATUS_GOOD, 0));
-		}
+		break;
 
+	default:
+		break;
+	}
+
+	switch (comm[0]) {
+	case CD_COMM_TESTUNIT:
+		SendStatus(MAKE_STATUS(CD_STATUS_GOOD, 0));
 		break;
 
 	case CD_COMM_REQUESTSENSE:

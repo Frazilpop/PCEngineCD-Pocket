@@ -2,7 +2,7 @@
 # The whole console in Verilator (src/sim/console): a system card and a disc in,
 # frames as PNGs and the sound as a WAV out, in build/sim_pce (src/sim/console/README.md).
 #   bash tools/sim.sh                                    the test card and test disc for 240 frames; checks what they report
-#   bash tools/sim.sh --card CARD --disc CUE [--frames N] [--every K] [--save F,F] [--press F:buttons[:N]] [--arcade]
+#   bash tools/sim.sh --card CARD --disc CUE [--frames N] [--every K] [--save F,F] [--press F:buttons[:N]] [--arcade] [--change F:CUE] [--reset F]
 #   NO_BUILD=1 bash tools/sim.sh ...                     a run on the build there is
 #   SIM_OUT=DIR NO_BUILD=1 bash tools/sim.sh ...         somewhere else, for several at once
 # The build is kept in build/sim and made again only when a source changes.

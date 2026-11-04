@@ -56,6 +56,15 @@ void init()
 bool file_error_enabled = 0;
 int file_error_code = 0;
 
+// The Pocket writes the save back at the size the slot table says, and writes
+// none at 0. Found by the slot's id: this was word 5, the third slot's size
+// whatever was third, and 0.2.3's data.json put Save fourth.
+static void save_slot_size()
+{
+	uint32_t save_slot = dataslot_search_id(2);
+	DATASLOT_BRAM((save_slot ? save_slot : 4) + 1) = (uint32_t)0x00000800;	// 4: where data.json has it, if the table has no id yet
+}
+
 void mainloop()
 {
   // We like to see over the UART that hey I did something :-)
@@ -71,31 +80,28 @@ void mainloop()
 	DisableInterrupts();
 	mainprintf("about to go in baby\r\n");
 	uint32_t display_cd = RISCGetTimer2(200);
-	// The Pocket writes the save back at the size the slot table says, and writes
-	// none at 0. Found by the slot's id: this was word 5, the third slot's size
-	// whatever was third, and 0.2.3's data.json put Save fourth.
-	uint32_t save_slot = dataslot_search_id(2);
-	DATASLOT_BRAM((save_slot ? save_slot : 4) + 1) = (uint32_t)0x00000800;	// 4: where data.json has it, if the table has no id yet
+	save_slot_size();
 	int file_error_shown = 0;
 	while(true){
 
+		// A user reload of a deferload slot comes only as this and a new line in the slot
+		// table (Analogue's docs, Host/Target Commands). Slot 100, the CUE, is the only
+		// one so: the system card's is set to restart the core.
 		if(DATASLOT_UPDATE_REG(0)){
-			mainprintf("Data Slot Update\r\n");
-			riscusleep(2000);
-			mainprintf("Data Slot done\r\n");
-			file_error_code = error_info_Core_data_slot_change;
-			display_cd = RISCGetTimer2(15000);
+			riscusleep(2000);	// the id comes through more stages of latch than the flag
+			if (DATASLOT_UPDATE_REG(1) == 100) {
+				file_error_code = 0;
+				file_error_shown = 0;
+				save_slot_size();	// if the Pocket wrote the whole table
+				pcecd_change_disc();
+			}
 		}
 
-		
 		core_poll_io();
 		core_reg_update();
 		if (RISCCheckTimer2(display_cd) && (file_error_code == 0)) {
 			osd_display_info();
 			display_cd = RISCGetTimer2(200);
-		} else if (RISCCheckTimer2(display_cd) && file_error_code == 6){
-			display_cd = RISCGetTimer2(200);
-			file_error_code = 0;
 		}
 
 		// drawn once: the same loop serves the disc, and this redrew every line every pass

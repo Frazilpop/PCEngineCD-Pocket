@@ -40,7 +40,6 @@
 #define UIO_DMA_SDIO    0x63
 
 void core_reset(int reset);
-void core_update_dataslots();
 void core_fdd_update();
 void core_poll_io();
 void core_reg_update();

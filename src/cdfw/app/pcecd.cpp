@@ -42,14 +42,43 @@ static bool bios_is_us()
 	return found;
 }
 
+// The player chose another disc in Core Settings. The tray opens once the console has
+// emptied the sector it's being sent: the chips send a status before what's waiting in
+// their FIFO, so a game that has stopped reading is not waited for long. It stays open
+// for a game to see, counted from the end of the load, since a game polling the drive
+// can't have seen it open while the firmware was opening files and not answering.
+#define TRAY_DRAIN_MS 500
+#define TRAY_OPEN_MS 2000
+static enum { TRAY_SHUT, TRAY_OPENING, TRAY_OPEN } tray = TRAY_SHUT;
+static uint32_t tray_timer;
+
+void pcecd_change_disc()
+{
+	tray = TRAY_OPENING;
+	tray_timer = RISCGetTimer2(TRAY_DRAIN_MS);
+}
+
+static void tray_poll()
+{
+	if ((tray == TRAY_OPENING) && ((cue.state != CD_STATE_READ) || cue.can_read_next || RISCCheckTimer2(tray_timer))) {
+		while (!dataslot_ready());	// the read ahead lands in the scratch RAM the CUE is read into
+		cue.OpenTray();
+		cue.Unload();
+		pcecd_set_image(DATASLOT_BRAM(0), DATASLOT_BRAM(1));
+		tray_timer = RISCGetTimer2(TRAY_OPEN_MS);
+		tray = TRAY_OPEN;
+		poll_timer = 0;
+	}
+	else if ((tray == TRAY_OPEN) && RISCCheckTimer2(tray_timer)) {
+		cue.CloseTray();
+		tray = TRAY_SHUT;
+	}
+}
+
 void pcecd_poll()
 {
 	static uint8_t last_req = 0;
 	static uint8_t adj = 0;
-
-
-
-	if (!poll_timer) poll_timer = RISCGetTimer2(13);
 
 	if (need_reset) {
 		need_reset = 0;
@@ -72,6 +101,13 @@ void pcecd_poll()
 		}
 		poll_timer = 0;
 	}
+
+	tray_poll();
+
+	// After the reset and the load, as MiSTer's next pass does. Before them, the 0 they
+	// set counted from power-on, and the drive ran a tick a pass until it had caught up.
+	if (!poll_timer) poll_timer = RISCGetTimer2(13);
+
 	// mainprintf("milli seconds %0.8x \r\n", poll_timer);
 	if (RISCCheckTimer2(poll_timer))
 	{

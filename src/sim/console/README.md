@@ -11,6 +11,7 @@ bash tools/sim.sh                                  # the test card and disc, 240
 bash tools/sim.sh --card roms/bios_3_0_jap.pce --disc "roms/Game/Game.cue" --frames 900 --every 30
 bash tools/sim.sh --card CARD --disc CUE --press 300:run --press 400:i:8 --save 500,501
 bash tools/sim.sh --card CARD --disc CUE --arcade  # the Arcade System core setting: the card's RAM (AC_EN)
+bash tools/sim.sh --card CARD --disc CUE --change 900:/full/path/Other.cue --reset 1000   # another disc chosen in Core Settings, Reset core
 SIM_OUT=build/sim_b NO_BUILD=1 bash tools/sim.sh ... # on the build there is, into its own folder; several at once
 SIM_FW_PRINT=1 bash tools/sim.sh ...               # the firmware's mainprintf on stderr
 ```
@@ -25,7 +26,7 @@ Out, in `build/sim_pce/` or `SIM_OUT`:
 | `f_NNNNN.png` | the frames asked for: the picture as `core_top.v` gives it to the Pocket, through the real `linebuffer.v` |
 | `frames.txt` | every frame: its number, size, a CRC of its pixels and its top-left pixel, for comparing two runs |
 | `audio.wav` | `main.sv`'s `audio_l`, `audio_r`, 16-bit stereo at 48 kHz |
-| `drive.log` | each command to the drive and each stage of its load, with the frame and the firmware's millisecond |
+| `drive.log` | each command to the drive and each stage of its load, with the frame and the firmware's millisecond; another disc chosen, the tray opening and shutting, the console told, Reset core |
 | `run.json` | the card and disc, the frames, the time, the speed, the drive's counters |
 
 **The test card** (`tools/testcard.py`, into `build/sim/test`) is the repo's own to commit: HuC6280 code
