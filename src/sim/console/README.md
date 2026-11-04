@@ -18,6 +18,9 @@ SIM_OUT=build/sim_b NO_BUILD=1 bash tools/sim.sh ... # on the build there is, in
 SIM_FW_PRINT=1 bash tools/sim.sh ...               # the firmware's mainprintf on stderr
 ```
 
+`--press-file FILE` takes lines of `F:buttons[:N]` from a file as the run goes, to steer a menu you can
+only see once you're there: look at the last frame, add a line a few frames on.
+
 `--press F:buttons[:N]` holds buttons on pad 1 from frame F for N frames (4 by default):
 `up down left right i ii select run`, joined with `+`.
 
