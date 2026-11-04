@@ -21,6 +21,7 @@ import struct
 import sys
 import zlib
 from array import array
+from collections import Counter
 from operator import ne
 from pathlib import Path
 
@@ -94,26 +95,22 @@ def step_for(sim_w):
 
 
 def align(sim, ref):
-    """The offset of the sim's picture in MAME's that makes them agree most: a sparse search."""
+    """The offset of the sim's picture in MAME's that makes them agree most. Only dots that
+    aren't the background count: on a mostly black picture, black agreeing with black would
+    outvote the picture itself (it put R-Type's level at 7, -8 where the score bar says 8, -2)."""
     best = None
+    bg = Counter(v for r in sim for v in r).most_common(1)[0][0]
     h, w = len(sim), len(sim[0])
-    ys = range(0, h, 7)
-    xs = range(0, w, 3)
+    dots_ = [(x, y, sim[y][x]) for y in range(h) for x in range(w) if sim[y][x] != bg]
     for dy in range(-20, 21):
         for dx in range(-24, 25):
-            same = n = 0
-            for y in ys:
-                ry = y + dy
-                if not 0 <= ry < len(ref):
-                    continue
-                r, s = ref[ry], sim[y]
-                for x in xs:
-                    rx = x + dx
-                    if 0 <= rx < len(r):
-                        n += 1
-                        same += s[x] == r[rx]
-            if n and (best is None or same / n > best[0]):
-                best = (same / n, dx, dy)
+            same = 0
+            for x, y, v in dots_:
+                ry, rx = y + dy, x + dx
+                if 0 <= ry < len(ref) and 0 <= rx < len(ref[ry]):
+                    same += ref[ry][rx] == v
+            if best is None or same > best[0]:
+                best = (same, dx, dy)
     return best[1], best[2]
 
 
