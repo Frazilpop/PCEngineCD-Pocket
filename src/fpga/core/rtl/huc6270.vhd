@@ -237,8 +237,25 @@ architecture rtl of HUC6270 is
 		TOP    	: std_logic;
 		BOTTOM   : std_logic;
 	end record;
-	type SpriteCache_t is array (0 to 63) of Sprite_r;
-	signal SPR_CACHE		: SpriteCache_t;
+	-- MiSTer keeps the 64 sprites of a line in flip-flops, 2,880 of them and most of this chip's
+	-- ALMs. Here they are a RAM with the same timing, read without a clock: written in one
+	-- clock while a line's sprites are found, read while they're fetched, and not cleared by
+	-- a reset, after which nothing reads one until the next line has written it.
+	-- no_rw_check: found (SPR_EVAL) from the display's start and fetched (SPR_FETCH) from its end
+	-- to just before the next one's, so a write and a read that matters never share a clock.
+	type SpriteCache_t is array (0 to 63) of std_logic_vector(44 downto 0);
+	signal SPR_CACHE		: SpriteCache_t := (others=>(others=>'0'));
+	attribute ramstyle : string;
+	attribute ramstyle of SPR_CACHE : signal is "MLAB, no_rw_check";
+	function bool_bit(b : boolean) return std_logic is
+	begin
+		if b then return '1'; else return '0'; end if;
+	end function;
+	signal SPR_CACHE_WE	: std_logic;
+	signal SPR_CACHE_D	: std_logic_vector(44 downto 0);
+	signal SPR_CACHE_Q	: std_logic_vector(44 downto 0);
+	signal SPR_H_NOW		: std_logic_vector(5 downto 0);
+	signal SPR_HIT			: std_logic;
 	signal SPR				: Sprite_r;
 	signal SPR_EVAL 		: std_logic;
 	signal SPR_EVAL_X		: unsigned(7 downto 0);
@@ -751,9 +768,40 @@ begin
 	CLR_A  <= CLR_A + 1 when rising_edge(CLK);
 	CLR_WE <= CLR_MEM   when rising_edge(CLK);
 
-	SPR <= SPR_CACHE(to_integer(SPR_FETCH_CNT(5 downto 0)));
+	SPR_H_NOW <= SAT_Q(13)&(SAT_Q(13) or SAT_Q(12))&"1111";
+	SPR_HIT <= '1' when RC_CNT >= unsigned(SPR_Y) and RC_CNT <= unsigned(SPR_Y) + unsigned(SPR_H_NOW) else '0';
+	-- the conditions of the write in the process below, as that process can't hold a RAM's
+	SPR_CACHE_WE <= DCK_CE and SPR_EVAL and not SPR_EVAL_DONE and SPR_EVAL_X(1) and SPR_EVAL_X(0) and SPR_HIT and not SPR_EVAL_FULL;
+	SPR_CACHE_D <= SPR_X & SPR_Y & SPR_PC & SPR_CG & SAT_Q(3 downto 0) & SAT_Q(7) & SAT_Q(8) & SAT_Q(13 downto 12) & SAT_Q(11) & SAT_Q(15)
+	               & bool_bit(SPR_EVAL_X(7 downto 2) = "000000")
+	               & bool_bit(RC_CNT = unsigned(SPR_Y))
+	               & bool_bit(RC_CNT = unsigned(SPR_Y) + unsigned(SPR_H_NOW));
+
+	process(CLK)
+	begin
+		if rising_edge(CLK) then
+			if SPR_CACHE_WE = '1' then
+				SPR_CACHE(to_integer(SPR_EVAL_CNT(5 downto 0))) <= SPR_CACHE_D;
+			end if;
+		end if;
+	end process;
+	SPR_CACHE_Q <= SPR_CACHE(to_integer(SPR_FETCH_CNT(5 downto 0)));
+
+	SPR.X <= SPR_CACHE_Q(44 downto 35);
+	SPR.Y <= SPR_CACHE_Q(34 downto 25);
+	SPR.PC <= SPR_CACHE_Q(24 downto 14);
+	SPR.CG <= SPR_CACHE_Q(13);
+	SPR.PAL <= SPR_CACHE_Q(12 downto 9);
+	SPR.PRIO <= SPR_CACHE_Q(8);
+	SPR.CGX <= SPR_CACHE_Q(7);
+	SPR.CGY <= SPR_CACHE_Q(6 downto 5);
+	SPR.HF <= SPR_CACHE_Q(4);
+	SPR.VF <= SPR_CACHE_Q(3);
+	SPR.SPR0 <= SPR_CACHE_Q(2);
+	SPR.TOP <= SPR_CACHE_Q(1);
+	SPR.BOTTOM <= SPR_CACHE_Q(0);
+
 	process(CLK, RST_N, SLOT, RC_CNT, SPR, SPR_FETCH_W)
-	variable SPR_H : std_logic_vector(5 downto 0);
 	variable SPR_OFS_Y : unsigned(5 downto 0);
 	variable SPR_LINE : unsigned(5 downto 0);
 	variable SPR_TILE_N : std_logic_vector(2 downto 0);
@@ -791,7 +839,6 @@ begin
 			SPR_EVAL_FULL <= '0';
 			SPR_EVAL_CNT <= (others=>'0');
 			SPR_FIND <= '0';
-			SPR_CACHE <= (others=>((others=>'0'),(others=>'0'),(others=>'0'),'0',"00",'0','0',"00",'0','0','0','0','0'));
 			SPR_Y <= (others=>'0');
 			SPR_X <= (others=>'0');
 			SPR_PC <= (others=>'0');
@@ -851,36 +898,9 @@ begin
 								SPR_CG <= SAT_Q(0);
 								SPR_PC <= SAT_Q(10 downto 0);
 							when others =>
-								SPR_H := SAT_Q(13)&(SAT_Q(13) or SAT_Q(12))&"1111";
-								if RC_CNT >= unsigned(SPR_Y) and RC_CNT <= unsigned(SPR_Y) + unsigned(SPR_H) then
+								if SPR_HIT = '1' then
 									SPR_FIND <= '1';
 									if SPR_EVAL_FULL = '0' then
-										SPR_CACHE(to_integer(SPR_EVAL_CNT(5 downto 0))).X <= SPR_X;
-										SPR_CACHE(to_integer(SPR_EVAL_CNT(5 downto 0))).Y <= SPR_Y;
-										SPR_CACHE(to_integer(SPR_EVAL_CNT(5 downto 0))).PC <= SPR_PC;
-										SPR_CACHE(to_integer(SPR_EVAL_CNT(5 downto 0))).CG <= SPR_CG;
-										SPR_CACHE(to_integer(SPR_EVAL_CNT(5 downto 0))).PAL <= SAT_Q(3 downto 0);
-										SPR_CACHE(to_integer(SPR_EVAL_CNT(5 downto 0))).PRIO <= SAT_Q(7);
-										SPR_CACHE(to_integer(SPR_EVAL_CNT(5 downto 0))).CGX <= SAT_Q(8);
-										SPR_CACHE(to_integer(SPR_EVAL_CNT(5 downto 0))).CGY <= SAT_Q(13 downto 12);
-										SPR_CACHE(to_integer(SPR_EVAL_CNT(5 downto 0))).HF <= SAT_Q(11);
-										SPR_CACHE(to_integer(SPR_EVAL_CNT(5 downto 0))).VF <= SAT_Q(15);
-										if SPR_EVAL_X(7 downto 2) = "000000" then
-											SPR_CACHE(to_integer(SPR_EVAL_CNT(5 downto 0))).SPR0 <= '1';
-										else
-											SPR_CACHE(to_integer(SPR_EVAL_CNT(5 downto 0))).SPR0 <= '0';
-										end if;
-										if RC_CNT = unsigned(SPR_Y) then
-											SPR_CACHE(to_integer(SPR_EVAL_CNT(5 downto 0))).TOP <= '1';
-										else
-											SPR_CACHE(to_integer(SPR_EVAL_CNT(5 downto 0))).TOP <= '0';
-										end if;
-										if RC_CNT = unsigned(SPR_Y) + unsigned(SPR_H) then
-											SPR_CACHE(to_integer(SPR_EVAL_CNT(5 downto 0))).BOTTOM <= '1';
-										else
-											SPR_CACHE(to_integer(SPR_EVAL_CNT(5 downto 0))).BOTTOM <= '0';
-										end if;
-										
 										SPR_EVAL_CNT <= SPR_EVAL_CNT + 1;
 										if SPR_EVAL_CNT = SPR_MAX then
 											SPR_EVAL_FULL <= '1';

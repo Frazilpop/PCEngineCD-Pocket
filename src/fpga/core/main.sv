@@ -115,8 +115,22 @@ module pce (
     output wire         cram0_we_n,
     output wire         cram0_ub_n,
     output wire         cram0_lb_n,
-    output wire         mb128_ready,
-    output wire         mb128_mem_ok,
+    // The second PSRAM chip: the ADPCM chip's memory (adpcm_psram.sv)
+    output wire [21:16] cram1_a,
+    inout  wire [15:0]  cram1_dq,
+    output wire         cram1_clk,
+    output wire         cram1_adv_n,
+    output wire         cram1_cre,
+    output wire         cram1_ce0_n,
+    output wire         cram1_ce1_n,
+    output wire         cram1_oe_n,
+    output wire         cram1_we_n,
+    output wire         cram1_ub_n,
+    output wire         cram1_lb_n,
+
+    // both chips cleared, and both chips' test words back
+    output wire         psram_ready,
+    output wire         psram_mem_ok,
 
     // Video
     output reg ce_pix,
@@ -183,6 +197,9 @@ module pce (
   reg          cd_region;
 	wire			CD_almost_full;
 	wire			AUDIO_almost_full;
+  wire [16:0]  adram_a;
+  wire [3:0]   adram_di, adram_do;
+  wire         adram_we, adram_rd;
   wire [21:0]  cd_ram_a;
   wire 			cd_ram_rd, cd_ram_wr;
   wire [7:0] 	cd_ram_do;
@@ -231,6 +248,12 @@ module pce (
 		.CD_RAM_DI				(rom_sdata),
 		.CD_RAM_RD				(cd_ram_rd),
 		.CD_RAM_WR				(cd_ram_wr),
+
+		.ADRAM_A					(adram_a),
+		.ADRAM_DI				(adram_di),
+		.ADRAM_DO				(adram_do),
+		.ADRAM_WE				(adram_we),
+		.ADRAM_RD				(adram_rd),
 
 		.CD_STAT					(cd_stat[7:0]),
 		.CD_MSG					(cd_stat[15:8]),
@@ -786,6 +809,36 @@ end
       .cram_ub_n(cram0_ub_n),
       .cram_lb_n(cram0_lb_n)
   );
+
+  adpcm_psram adpcm_psram (
+      .clk(clk_sys_42_95),
+      .locked(pll_core_locked),
+
+      .ready(adpcm_ready),
+      .mem_ok(adpcm_mem_ok),
+
+      .a(adram_a),
+      .din(adram_di),
+      .we(adram_we),
+      .rd(adram_rd),
+      .dout(adram_do),
+
+      .cram_a(cram1_a),
+      .cram_dq(cram1_dq),
+      .cram_clk(cram1_clk),
+      .cram_adv_n(cram1_adv_n),
+      .cram_cre(cram1_cre),
+      .cram_ce0_n(cram1_ce0_n),
+      .cram_ce1_n(cram1_ce1_n),
+      .cram_oe_n(cram1_oe_n),
+      .cram_we_n(cram1_we_n),
+      .cram_ub_n(cram1_ub_n),
+      .cram_lb_n(cram1_lb_n)
+  );
+
+  wire mb128_ready, mb128_mem_ok, adpcm_ready, adpcm_mem_ok;
+  assign psram_ready = mb128_ready & adpcm_ready;
+  assign psram_mem_ok = mb128_mem_ok & adpcm_mem_ok;
 
 
   wire [10:0] bram_addr;

@@ -167,10 +167,10 @@ static void finish() {
   FILE *fj = fopen((out_dir + "/run.json").c_str(), "w");
   if (fj) {
     // rom and region say which run this was
-    fprintf(fj, "{\"rom\":\"%s\",\"region\":\"%s\",\"card\":\"%s\",\"disc\":\"%s\",\"frames\":%ld,\"saved\":%d,\"seconds\":%.1f,\"mhz\":%.2f,\"mb128\":%s,\"psram_ok\":%s,\"psram_violations\":%u,\"drive\":%s}\n",
+    fprintf(fj, "{\"rom\":\"%s\",\"region\":\"%s\",\"card\":\"%s\",\"disc\":\"%s\",\"frames\":%ld,\"saved\":%d,\"seconds\":%.1f,\"mhz\":%.2f,\"mb128\":%s,\"psram_ok\":%s,\"psram_violations\":%u,\"adpcm_reads\":%u,\"adpcm_writes\":%u,\"drive\":%s}\n",
             json_escape(disc_path.empty() ? card_path : disc_path).c_str(), strstr(drive, "\"region_us\":true") ? "USA" : "Japan",
             json_escape(card_path).c_str(), json_escape(disc_path).c_str(), nframe, saved, s, clocks / s / 1e6, mb128_on ? "true" : "false",
-            top->mb128_mem_ok ? "true" : "false", top->psram_violations, drive);
+            top->psram_mem_ok ? "true" : "false", top->psram_violations, top->adpcm_reads, top->adpcm_writes, drive);
     fclose(fj);
   }
   printf("Done: %ld frames in %.0f s, %.2f MHz of 42.95; drive %s\n", nframe, s, clocks / s / 1e6, drive);
@@ -355,8 +355,8 @@ int main(int argc, char **argv) {
   sim_tick(2000);
 
   // core_top.v holds the Pocket's boot status until this, and the slots load after it
-  while (!top->mb128_ready) sim_tick(1000);
-  printf("PSRAM ready at %.1f ms, %s, %u timing faults\n", clocks * 1e3 / CLK_HZ, top->mb128_mem_ok ? "its test words read back" : "ITS TEST WORDS DID NOT READ BACK", top->psram_violations);
+  while (!top->psram_ready) sim_tick(1000);
+  printf("PSRAM ready at %.1f ms, %s, %u timing faults\n", clocks * 1e3 / CLK_HZ, top->psram_mem_ok ? "its test words read back" : "ITS TEST WORDS DID NOT READ BACK", top->psram_violations);
   fflush(stdout);
   if (!save_in.empty()) save_load(save_in);
 

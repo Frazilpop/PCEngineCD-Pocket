@@ -23,9 +23,11 @@ module sim_top (
 	input  logic [15:0] sd_buff_dout,
 	output logic [15:0] sd_buff_din,
 
-	output logic mb128_ready,
-	output logic mb128_mem_ok,
+	output logic psram_ready,
+	output logic psram_mem_ok,
 	output logic [31:0] psram_violations,
+	output logic [31:0] adpcm_reads,
+	output logic [31:0] adpcm_writes,
 
 	// what a game asks of the MB128, for drive.log
 	output logic [3:0] mb128_state,
@@ -71,7 +73,19 @@ module sim_top (
 	psram_sim psram_sim (
 		.clk(clk_sys), .a(cram_a), .dq(cram_dq), .cram_clk(cram_clk), .adv_n(cram_adv_n), .cre(cram_cre),
 		.ce_n(cram_ce0_n), .oe_n(cram_oe_n), .we_n(cram_we_n), .ub_n(cram_ub_n), .lb_n(cram_lb_n),
-		.violations(psram_violations)
+		.violations(mb128_violations), .reads(), .writes()
+	);
+
+	wire [21:16] cram1_a;
+	wire [15:0] cram1_dq;
+	wire cram1_clk, cram1_adv_n, cram1_cre, cram1_ce0_n, cram1_oe_n, cram1_we_n, cram1_ub_n, cram1_lb_n;
+	wire [31:0] mb128_violations, adpcm_violations;
+	assign psram_violations = mb128_violations + adpcm_violations;
+
+	psram_sim psram1_sim (
+		.clk(clk_sys), .a(cram1_a), .dq(cram1_dq), .cram_clk(cram1_clk), .adv_n(cram1_adv_n), .cre(cram1_cre),
+		.ce_n(cram1_ce0_n), .oe_n(cram1_oe_n), .we_n(cram1_we_n), .ub_n(cram1_ub_n), .lb_n(cram1_lb_n),
+		.violations(adpcm_violations), .reads(adpcm_reads), .writes(adpcm_writes)
 	);
 
 	pce pce (
@@ -127,8 +141,11 @@ module sim_top (
 		.cram0_a(cram_a), .cram0_dq(cram_dq), .cram0_clk(cram_clk), .cram0_adv_n(cram_adv_n),
 		.cram0_cre(cram_cre), .cram0_ce0_n(cram_ce0_n), .cram0_ce1_n(), .cram0_oe_n(cram_oe_n),
 		.cram0_we_n(cram_we_n), .cram0_ub_n(cram_ub_n), .cram0_lb_n(cram_lb_n),
-		.mb128_ready(mb128_ready),
-		.mb128_mem_ok(mb128_mem_ok),
+		.cram1_a(cram1_a), .cram1_dq(cram1_dq), .cram1_clk(cram1_clk), .cram1_adv_n(cram1_adv_n),
+		.cram1_cre(cram1_cre), .cram1_ce0_n(cram1_ce0_n), .cram1_ce1_n(), .cram1_oe_n(cram1_oe_n),
+		.cram1_we_n(cram1_we_n), .cram1_ub_n(cram1_ub_n), .cram1_lb_n(cram1_lb_n),
+		.psram_ready(psram_ready),
+		.psram_mem_ok(psram_mem_ok),
 
 		.ce_pix(ce_pix),
 		.hsync(hs),

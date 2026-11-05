@@ -439,11 +439,11 @@ parameter CMD_REG_ADDRESS 			= 8'hf8;
 
 	// bridge host commands
 	// synchronous to clk_74a
-	// Held until the MB128's memory is clear, as the Pocket loads the save after boot (mb128_psram.sv)
-	wire mb128_ready, mb128_mem_ok;
-	wire mb128_ready_s, mb128_mem_ok_s;
-	wire status_boot_done = pll_core_locked & mb128_ready_s;
-	wire status_setup_done = pll_core_locked & mb128_ready_s;  // rising edge triggers a target command
+	// Held until the PSRAM is clear, as the Pocket loads the save after boot (mb128_psram.sv)
+	wire psram_ready, psram_mem_ok;
+	wire psram_ready_s, psram_mem_ok_s;
+	wire status_boot_done = pll_core_locked & psram_ready_s;
+	wire status_setup_done = pll_core_locked & psram_ready_s;  // rising edge triggers a target command
 	wire status_running = reset_n;  // we are running as soon as reset_n goes high
 
 	wire            dataslot_requestread;
@@ -687,18 +687,6 @@ MPU_AFP_CORE #(
 		.cont3_trig         				( cont3_trig ),
 		.cont4_trig         				( cont4_trig ),
 		
-		.cram_a                			( cram1_a ),
-		.cram_dq               			( cram1_dq ),
-		.cram_wait             			( cram1_wait ),
-		.cram_clk              			( cram1_clk ),
-		.cram_adv_n            			( cram1_adv_n ),
-		.cram_cre              			( cram1_cre ),
-		.cram_ce0_n            			( cram1_ce0_n ),
-		.cram_ce1_n            			( cram1_ce1_n ),
-		.cram_oe_n             			( cram1_oe_n ),
-		.cram_we_n             			( cram1_we_n ),
-		.cram_ub_n             			( cram1_ub_n ),
-		.cram_lb_n             			( cram1_lb_n ),
 		
 		// MPU Controlls to the APF
 		
@@ -923,13 +911,13 @@ MPU_AFP_CORE #(
 
   synch_3 #(
       .WIDTH(2)
-  ) mb128_status_s (
-      {mb128_ready, mb128_mem_ok},
-      {mb128_ready_s, mb128_mem_ok_s},
+  ) psram_status_s (
+      {psram_ready, psram_mem_ok},
+      {psram_ready_s, psram_mem_ok_s},
       clk_74a
   );
 
-  assign CORE_INPUT = {31'd0, mb128_mem_ok_s};
+  assign CORE_INPUT = {31'd0, psram_mem_ok_s};
 
   wire [15:0] audio_l;
   wire [15:0] audio_r;
@@ -1052,8 +1040,20 @@ MPU_AFP_CORE #(
       .cram0_we_n					(cram0_we_n),
       .cram0_ub_n					(cram0_ub_n),
       .cram0_lb_n					(cram0_lb_n),
-      .mb128_ready				(mb128_ready),
-      .mb128_mem_ok				(mb128_mem_ok),
+      .cram1_a						(cram1_a),
+      .cram1_dq					(cram1_dq),
+      .cram1_clk					(cram1_clk),
+      .cram1_adv_n				(cram1_adv_n),
+      .cram1_cre					(cram1_cre),
+      .cram1_ce0_n				(cram1_ce0_n),
+      .cram1_ce1_n				(cram1_ce1_n),
+      .cram1_oe_n					(cram1_oe_n),
+      .cram1_we_n					(cram1_we_n),
+      .cram1_ub_n					(cram1_ub_n),
+      .cram1_lb_n					(cram1_lb_n),
+
+      .psram_ready				(psram_ready),
+      .psram_mem_ok				(psram_mem_ok),
 		
 
       .ce_pix 						(ce_pix),

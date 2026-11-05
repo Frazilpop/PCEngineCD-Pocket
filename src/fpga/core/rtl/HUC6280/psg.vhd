@@ -45,7 +45,6 @@ type chan_t is
 		NE			: std_logic;
 
 		-- Waveform generator
-		WF_DATA	: wavedata_t;
 		WF_ADDR	: std_logic_vector(4 downto 0);
 		WF_CNT	: std_logic_vector(12 downto 0);
 
@@ -72,6 +71,12 @@ type chan_t is
 	end record;
 type chanarray_t is array(0 to 5) of chan_t;
 signal CH		: chanarray_t;
+
+-- MiSTer keeps the wave tables in flip-flops, 960 of them. Here each channel's is a RAM read
+-- without a clock, with the same timing. Neither way does a reset clear them.
+type wavequeue_t is array(0 to 5) of std_logic_vector(4 downto 0);
+signal WF_Q		: wavequeue_t;
+signal WF_WE	: std_logic_vector(5 downto 0);
 
 -- Channels mixing
 signal LACC		: std_logic_vector(23 downto 0);
@@ -147,9 +152,6 @@ begin
 					CH(CHSEL).RAL <= DI(3 downto 0);
 
 				when "0110" =>
-					if CH(CHSEL).DDA = '0' then
-						CH(CHSEL).WF_DATA(conv_integer(CH(CHSEL).WF_ADDR)) <= DI(4 downto 0);
-					end if;
 					if CH(CHSEL).CHON = '1' then
 						CH(CHSEL).DA_OUT <= DI(4 downto 0);
 					end if;
@@ -196,7 +198,7 @@ process( CLK ) begin
 				end if;
 
 				if CH(i).LFCTL /= "00" then
-					CH(i).WF_OUT <= CH(i).WF_DATA(conv_integer(CH(i).WF_ADDR));
+					CH(i).WF_OUT <= WF_Q(i);
 
 					if CH(i).LFTRG = '1' then
 						CH(i).WF_ADDR <= (others => '0');
@@ -218,7 +220,7 @@ process( CLK ) begin
 				elsif CH(i).CHON = '0' then
 					CH(i).WF_CNT <= (CH(i).FREQ - 1 + CH(i).LFO_ADD) & "1";
 				elsif CH(i).DDA = '0' then
-					CH(i).WF_OUT <= CH(i).WF_DATA(conv_integer(CH(i).WF_ADDR));
+					CH(i).WF_OUT <= WF_Q(i);
 
 					if CLKEN = '1' then
 						CH(i).WF_CNT <= CH(i).WF_CNT - 1;
@@ -282,7 +284,7 @@ begin
 				CH(i).LFO_ADD <= (others => '0');
 			end loop;
 		else
-			DATA := CH(1).WF_DATA(conv_integer(CH(1).WF_ADDR)) xor "1000";
+			DATA := WF_Q(1) xor "1000";
 			CH(0).LFO_ADD(11 downto 8) <= DATA(4) & DATA(4) & DATA(4) & DATA(4);
 			case CH(1).LFCTL is
 			when "01" =>   CH(0).LFO_ADD(7 downto 0) <= DATA(4) & DATA(4) & DATA(4) & DATA;
@@ -293,6 +295,23 @@ begin
 		end if;
 	end if;
 end process;
+
+WF_MEM : for i in 0 to 5 generate
+	signal WF_RAM : wavedata_t := (others => (others => '0'));
+	attribute ramstyle : string;
+	attribute ramstyle of WF_RAM : signal is "MLAB";
+begin
+	WF_WE(i) <= '1' when RESET_N = '1' and WE = '1' and A = "0110" and CHSEL = i and CH(i).DDA = '0' else '0';
+	process( CLK )
+	begin
+		if rising_edge( CLK ) then
+			if WF_WE(i) = '1' then
+				WF_RAM(conv_integer(CH(i).WF_ADDR)) <= DI(4 downto 0);
+			end if;
+		end if;
+	end process;
+	WF_Q(i) <= WF_RAM(conv_integer(CH(i).WF_ADDR));
+end generate;
 
 -- Channels mixing
 VT : entity work.dpram generic map (12,24,"HUC6280/voltab.mif")

@@ -43,6 +43,14 @@ entity cd is
 		CD_AUDIO_WR	: in std_logic;
 		CD_SUBCD_WR	: in std_logic;
 		CD_DATA_END	: out std_logic;
+		-- The ADPCM chip's memory, outside (adpcm_psram.sv): cd.vhd's slots as they were, a
+		-- read's address taken on ADRAM_RD and its data used at the slot's end.
+		ADRAM_A		: out std_logic_vector(16 downto 0);
+		ADRAM_DI		: out std_logic_vector(3 downto 0);
+		ADRAM_DO		: in  std_logic_vector(3 downto 0);
+		ADRAM_WE		: out std_logic;
+		ADRAM_RD		: out std_logic;
+
 		CD_almost_full		: out std_logic;
 		AUDIO_almost_full	: out std_logic;
 		
@@ -125,11 +133,6 @@ architecture rtl of cd is
 	signal READ_PEND			: std_logic;
 	
 	--ADPCM DRAM
-	signal ADRAM_A				: std_logic_vector(16 downto 0);
-	signal ADRAM_DI			: std_logic_vector(3 downto 0);
-	signal ADRAM_DO			: std_logic_vector(3 downto 0);
-	signal ADRAM_WE			: std_logic;
-	
 	type DRAMSlot_t is (
 		SLOT_REFRESH,
 		SLOT_READ,
@@ -629,9 +632,14 @@ begin
 			DRAM_CLK_CNT <= (others => '0');
 			DRAM_CLKEN <= '0';
 			DRAM_SLOT_CNT <= (others => '0');
+			ADRAM_RD <= '0';
 		elsif rising_edge(CLK) then
 			if EN = '1' then
 				DRAM_CLKEN <= '0';
+				ADRAM_RD <= '0';
+				if DRAM_CLK_CNT = 9-1 and DRAM_SLOT = SLOT_READ then
+					ADRAM_RD <= '1';
+				end if;
 				DRAM_CLK_CNT <= DRAM_CLK_CNT + 1;
 				if DRAM_CLK_CNT = 18-1 then
 					DRAM_CLK_CNT <= (others => '0');
@@ -655,14 +663,6 @@ begin
 		end case;
 	end process;
 	
-	ADPCM_DRAM : entity work.dpram generic map (17,4)
-	port map (
-		clock		=> CLK,
-		address_a=> ADRAM_A,
-		data_a	=> ADRAM_DI,
-		wren_a	=> ADRAM_WE,
-		q_a		=> ADRAM_DO
-	);
 	ADRAM_A <= ADPCM_WRADDR when DRAM_SLOT = SLOT_WRITE else ADPCM_RDADDR;
 	ADRAM_DI <= ADPCM_WRDATA(3 downto 0) when ADPCM_WRITE_NIB = '1' else ADPCM_WRDATA(7 downto 4);
 	ADRAM_WE <= DRAM_CLKEN when DRAM_SLOT = SLOT_WRITE and (ADPCM_WRITE_PEND = '1' or DMA_WRITE_PEND = '1') else '0';

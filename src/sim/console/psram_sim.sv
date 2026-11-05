@@ -1,4 +1,4 @@
-// One die of the AS1C8M16PL-70, as mb128_psram.sv uses it, on that module's clock, with
+// One die of the AS1C8M16PL-70, as mb128_psram.sv and adpcm_psram.sv use it, on their clock, with
 // the datasheet's asynchronous timings counted in its 23.3 ns clocks, so a fault in the
 // sequence shows here rather than on the Pocket.
 //
@@ -20,10 +20,12 @@ module psram_sim #(
 	input  wire         we_n,
 	input  wire         ub_n,
 	input  wire         lb_n,
-	output logic [31:0] violations = 0
+	output logic [31:0] violations = 0,
+	output logic [31:0] reads = 0,
+	output logic [31:0] writes = 0
 );
 
-reg [15:0] mem [0:(1 << 17) - 1];
+reg [15:0] mem [0:(1 << 18) - 1];
 reg [15:0] bcr = 16'h5C1F;
 wire       asyn = bcr[15];
 
@@ -35,7 +37,7 @@ int        since_adv = 0, since_oe = 0, ce_low = 0, ce_high = 100, we_low = 0, s
 reg [15:0] dq_old = 0;
 reg [15:0] addr_dq = 0;
 
-initial for (int i = 0; i < (1 << 17); i++) mem[i] = 16'hBEEF ^ i[15:0];
+initial for (int i = 0; i < (1 << 18); i++) mem[i] = 16'hBEEF ^ i[15:0];
 
 assign dq = (!ce_n && !oe_n && we_n) ? out : 16'hZZZZ;
 
@@ -77,10 +79,11 @@ always @(posedge clk) begin
 	if (adv_n && !adv_old && dq !== addr_dq) fault("the address went with ADV#'s rise");
 
 	if (!oe_n && oe_old && since_adv_rise < 2) fault("OE# low with the address maybe still on the bus");
+	if (!oe_n && oe_old) reads <= reads + 1;
 	since_oe <= oe_n ? 0 : since_oe + 1;
 	we_low   <= we_n ? 0 : we_low + 1;
 
-	out <= good ? mem[addr[16:0]] : 16'hDEAD;
+	out <= good ? mem[addr[17:0]] : 16'hDEAD;
 
 	// A write lands at WE#'s rise
 	if (we_n && !we_old) begin
@@ -90,8 +93,9 @@ always @(posedge clk) begin
 		if (addr_cre) begin
 			if (addr[19:18] == 2'b10) bcr <= addr[15:0];
 		end else if (asyn) begin
-			if (!ub_n) mem[addr[16:0]][15:8] <= dq[15:8];
-			if (!lb_n) mem[addr[16:0]][7:0]  <= dq[7:0];
+			if (!ub_n) mem[addr[17:0]][15:8] <= dq[15:8];
+			if (!lb_n) mem[addr[17:0]][7:0]  <= dq[7:0];
+			if (!ub_n || !lb_n) writes <= writes + 1;
 		end
 	end
 end

@@ -19,6 +19,11 @@ system card does and asks the drive what a game's boot does:
   sector's bytes summed against the sum made here;
 - CD audio: track 2 plays (SAPSP, SAPEP) at 880 Hz left, 1320 Hz right, READ SUBQ follows
   it; the PSG's first channel sounds at about 440 Hz throughout, so the WAV shows each by pitch;
+- the ADPCM chip's memory, each way a game reaches it: bytes written by the CPU and read back
+  at both ends of the 64K, a sector by its DMA read back and summed, and that sector played
+  to its end, so the sound of it is in the WAV for one run to be compared with another;
+- Populous's 32K of cartridge RAM: 0x1F26 of the card spells POPULOUS, which main.sv looks
+  for, and the RAM takes a pattern, mirrors and keeps apart;
 - the pad: RUN appears at the bottom of the screen while Run is held.
 
 The backdrop turns green when every check has passed and stays red if one fails, so the
@@ -48,6 +53,7 @@ DATA_SECTORS = 300
 AUDIO_SECONDS = 20
 AUDIO_PREGAP = 150                     # the audio track's PREGAP: on the disc, not in its file
 READ1_LBA, READ3_LBA = 0x10, 0x100     # the sectors read, the second past the read cache's reach
+DMA_LBA = 0x20                         # the sector that goes to the ADPCM chip's memory
 
 
 def sector(lba):
@@ -213,6 +219,10 @@ BUF = 0x2800                # RAM: where GET DIR INFO's answers and a sector lan
 
 def sum_of(lba, n=1):
     return sum(sum(sector(lba + i)) for i in range(n)) & 0xFFFF
+
+
+AD_OFFS_LO, AD_OFFS_HI, AD_DATA, AD_DMA, AD_STAT, AD_CTL, AD_RATE = 0x1808, 0x1809, 0x180A, 0x180B, 0x180C, 0x180D, 0x180E
+KEY, HELD = 0x10 + 18, 0x10 + 19
 
 
 def build(total):
@@ -396,6 +406,83 @@ def build(total):
     a.jsr('sum')
     expect_sum(a, sum_of(READ3_LBA, 3), 9)
 
+    # The ADPCM chip's memory, by the CPU: two patterns at the 64K's two ends, each read back
+    # after the other is written, then at once again
+    say(16, 'ADPCM CPU')
+    ad_set(a, 0xFF00, 0x03, 0x02)
+    a.lda(0xA5); a.sta_z(KEY); a.jsr('ad_write')
+    ad_set(a, 0x0100, 0x03, 0x02)
+    a.lda(0x3C); a.sta_z(KEY); a.jsr('ad_write')
+    ad_set(a, 0xFF00, 0x0C, 0x08)
+    a.lda(0xA5); a.sta_z(KEY); a.jsr('ad_check')
+    ad_set(a, 0x0100, 0x0C, 0x08)
+    a.lda(0x3C); a.sta_z(KEY); a.jsr('ad_check')
+
+    # by its DMA: one sector from the disc, read back by the CPU into CD RAM and summed
+    say(17, 'ADPCM DMA')
+    ad_set(a, 0x4000, 0x03, 0x02)
+    send_cmd(a, 'c_readdma', 6)
+    a.lda(0x03); a.sta_a(AD_DMA)
+    a.label('dmawait')
+    a.lda_a(CD_STAT); a.and_(0xF8); a.cmp(0xD8); a.bne('dmawait')
+    a.lda(0); a.sta_a(AD_DMA)
+    a.jsr('finish_cmd')
+    a.lda_z(STAT); a.beq('dok'); a.jmp('fail')
+    a.label('dok')
+    ad_set(a, 0x4000, 0x0C, 0x08)
+    a.lda_a(AD_DATA); a.jsr('ad_rdwait')        # the first read gives what was there before
+    a.lda(0x00); a.sta_z(DATAP); a.lda(0x40); a.sta_z(DATAP_H)
+    a.lda(0x08); a.sta_z(COUNT_H); a.lda(0); a.sta_z(COUNT)
+    a.ldy(0)
+    a.label('dmard')
+    a.lda_a(AD_DATA); a.sta_iy(DATAP); a.jsr('ad_rdwait')
+    a.inc_z(DATAP); a.bne('dmard1')
+    a.inc_z(DATAP_H)
+    a.label('dmard1')
+    a.lda_z(COUNT); a.bne('dmard2')
+    a.dec_z(COUNT_H)
+    a.label('dmard2')
+    a.dec_z(COUNT)
+    a.lda_z(COUNT); a.bne('dmard')
+    a.lda_z(COUNT_H); a.bne('dmard')
+    a.lda(0x00); a.sta_z(PTR); a.lda(0x40); a.sta_z(PTR_H)
+    a.lda(0x08); a.sta_z(COUNT_H); a.lda(0); a.sta_z(COUNT)
+    a.jsr('sum')
+    expect_sum(a, sum_of(DMA_LBA), 17)
+
+    # that sector played at the fastest rate, to its end
+    say(18, 'ADPCM PLAY')
+    a.lda(0x0E); a.sta_a(AD_RATE)
+    ad_set(a, 0x4000, 0x0C, 0x08)
+    ad_offs(a, 0x0800)
+    a.lda(0x10); a.sta_a(AD_CTL); a.lda(0x00); a.sta_a(AD_CTL)  # the length
+    a.lda(0x60); a.sta_a(AD_CTL)                                # play, stopping at the end
+    a.jsr('wait_frame')
+    a.lda_a(AD_STAT); a.and_(0x08); a.bne('plgo'); a.jmp('fail')
+    a.label('plgo')
+    a.lda(60); a.sta_z(TRIES)
+    a.label('plwait')
+    a.jsr('wait_frame')
+    a.lda_a(AD_STAT); a.and_(0x08); a.beq('pldone')
+    a.dec_z(TRIES); a.bne('plwait')
+    a.jmp('fail')
+    a.label('pldone')
+    a.lda_a(AD_STAT); a.and_(0x01); a.bne('plend'); a.jmp('fail')
+    a.label('plend')
+    a.lda(0x00); a.sta_a(AD_CTL)
+
+    # Populous's RAM: bank 0x40 and bank 0x43, each its own, and 0x44 a mirror of 0x40
+    say(19, 'POPULOUS RAM')
+    a.lda(0x40); a.tam(0x08)
+    a.lda(0x69); a.sta_z(KEY); a.jsr('pr_write')
+    a.lda(0x43); a.tam(0x08)
+    a.lda(0x96); a.sta_z(KEY); a.jsr('pr_write')
+    a.jsr('pr_check')
+    a.lda(0x40); a.tam(0x08)
+    a.lda(0x69); a.sta_z(KEY); a.jsr('pr_check')
+    a.lda(0x44); a.tam(0x08)
+    a.jsr('pr_check')
+
     # CD audio: track 2 from its start, to the disc's end, in the background
     say(10, 'CD AUDIO')
     cmd(a, 'c_sapsp', 10, BUF)
@@ -518,6 +605,56 @@ def build(total):
     a.lda(0x01); a.sta_a(0x0003)
     a.rts()
 
+    # ---- the ADPCM chip's memory: 256 bytes of (y * 1) ^ KEY through the CPU's port ----
+    a.label('ad_write')
+    a.ldy(0)
+    a.label('adw1')
+    a.tya(); a.imm(0x45, KEY)   # EOR zp
+    a.sta_a(AD_DATA)
+    a.label('adw2')
+    a.lda_a(AD_STAT); a.and_(0x04); a.bne('adw2')
+    a.iny(); a.bne('adw1')
+    a.rts()
+
+    a.label('ad_rdwait')
+    a.pha()
+    a.label('adr0')
+    a.lda_a(AD_STAT); a.and_(0x80); a.bne('adr0')
+    a.pla()
+    a.rts()
+
+    a.label('ad_check')
+    a.lda_a(AD_DATA); a.jsr('ad_rdwait')    # the first read gives what was there before
+    a.ldy(0)
+    a.label('adc1')
+    a.lda_a(AD_DATA); a.sta_z(HELD); a.jsr('ad_rdwait')
+    a.tya(); a.imm(0x45, KEY); a.cmp_z(HELD)
+    a.beq('adc2')
+    a.jmp('fail')
+    a.label('adc2')
+    a.iny(); a.bne('adc1')
+    a.rts()
+
+    # ---- 256 bytes at MPR3's bank ----
+    a.label('pr_write')
+    a.lda(0x00); a.sta_z(PTR); a.lda(0x60); a.sta_z(PTR_H)
+    a.ldy(0)
+    a.label('prw1')
+    a.tya(); a.imm(0x45, KEY); a.sta_iy(PTR)
+    a.iny(); a.bne('prw1')
+    a.rts()
+
+    a.label('pr_check')
+    a.lda(0x00); a.sta_z(PTR); a.lda(0x60); a.sta_z(PTR_H)
+    a.ldy(0)
+    a.label('prc1')
+    a.tya(); a.imm(0x45, KEY); a.imm(0xD1, PTR)     # CMP (zp),Y
+    a.beq('prc2')
+    a.jmp('fail')
+    a.label('prc2')
+    a.iny(); a.bne('prc1')
+    a.rts()
+
     # ---- SCSI, as a system card's routines go ----
     # select the drive and send the command at CMDP, COUNT bytes
     a.label('send')
@@ -621,6 +758,7 @@ def build(total):
     table('c_dir3', 0xDE, 2, 0x01, 0, 0, 0, 0, 0, 0, 0)
     table('c_read1', 0x08, READ1_LBA >> 16, READ1_LBA >> 8 & 0xFF, READ1_LBA & 0xFF, 1, 0)
     table('c_read3', 0x08, READ3_LBA >> 16, READ3_LBA >> 8 & 0xFF, READ3_LBA & 0xFF, 3, 0)
+    table('c_readdma', 0x08, DMA_LBA >> 16, DMA_LBA >> 8 & 0xFF, DMA_LBA & 0xFF, 1, 0)
     table('c_sapsp', 0xD8, 3, 0x02, 0, 0, 0, 0, 0, 0, 0x80)     # at track 2, playing
     table('c_sapep', 0xD9, 3, 0x03, 0, 0, 0, 0, 0, 0, 0x80)     # to the disc's end, no interrupt
     table('c_subq', 0xDD, 10, 0, 0, 0, 0, 0, 0, 0, 0)
@@ -644,12 +782,24 @@ def build(total):
 
     a.link()
     code = bytes(a.b)
-    assert len(code) <= 0x1FF6, f'the code has outgrown its 8K page: {len(code)}'
+    assert len(code) <= 0x1F26, f'the code has outgrown its 8K page: {len(code)}'
     page = bytearray(code.ljust(0x2000, b'\xFF'))
+    page[0x1F26:0x1F2E] = b'POPULOUS'   # main.sv's look at the card, which gives it the 32K
     for at, name in ((0x1FF6, 'nothing'), (0x1FF8, 'irq'), (0x1FFA, 'nothing'), (0x1FFC, 'nothing'), (0x1FFE, 'reset')):
         page[at:at + 2] = struct.pack('<H', a.labels[name])
     # (a system card's size, so the ROM's mirroring is a system card's)
     return bytes(page).ljust(CARD_SIZE, b'\xFF')
+
+
+def ad_offs(a, value):
+    a.lda(value & 0xFF); a.sta_a(AD_OFFS_LO); a.lda(value >> 8); a.sta_a(AD_OFFS_HI)
+
+
+def ad_set(a, offs, up, down):
+    """An address from the offset: its control bit's fall takes it. Up and down say which."""
+    ad_offs(a, offs)
+    a.lda(up); a.sta_a(AD_CTL); a.lda(down); a.sta_a(AD_CTL)
+    a.lda(0); a.sta_a(AD_CTL)
 
 
 def send_cmd(a, name, length):

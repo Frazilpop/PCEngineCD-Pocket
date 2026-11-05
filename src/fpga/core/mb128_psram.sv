@@ -1,8 +1,8 @@
 // The Memory Base 128's 128 KB, in the first PSRAM chip's first die.
 //
 // MiSTer keeps it in block RAM (rtl/mb128.sv's dpram_difclk, about 105 M10K), and this
-// chip has 7 free. Nothing else uses the PSRAM, so nothing here can get in the way of
-// the console's own memory, and the protocol is slow enough to have no need of speed:
+// chip had 7 free. Nothing else uses this PSRAM chip (the ADPCM chip's memory is on the
+// other, adpcm_psram.sv), so nothing here can get in the way of the console's own memory, and the protocol is slow enough to have no need of speed:
 // the fastest a CPU can clock a bit is about 70 of these clocks, and the longest this
 // takes between two bits is a write and a read, 18.
 //

@@ -43,6 +43,12 @@ entity pce_top is
 		CD_RAM_DI 	: in  std_logic_vector(7 downto 0);
 		CD_RAM_RD	: out std_logic;
 		CD_RAM_WR	: out std_logic;
+
+		ADRAM_A		: out std_logic_vector(16 downto 0);
+		ADRAM_DI		: out std_logic_vector(3 downto 0);
+		ADRAM_DO		: in  std_logic_vector(3 downto 0);
+		ADRAM_WE		: out std_logic;
+		ADRAM_RD		: out std_logic;
 		AC_EN			: in  std_logic;
 
 		CD_STAT		: in  std_logic_vector(7 downto 0);
@@ -126,7 +132,6 @@ signal CPU_ROM_SEL_N	: std_logic;
 signal RAM_DO			: std_logic_vector(7 downto 0);
 signal RAM_A			: std_logic_vector(14 downto 0);
 
-signal PRAM_DO			: std_logic_vector(7 downto 0);
 signal CPU_PRAM_SEL_N: std_logic;
 
 -- VCE signals
@@ -530,10 +535,9 @@ CPU_ROM_SEL_N <= CPU_A(20);
 -- CPU data bus
 CPU_DI <= RAM_DO         when CPU_RAM_SEL_N  = '0'
 			else CD_DO      when CD_SEL_N       = '0'
-			else CD_RAM_DI  when CD_RAM_CS_N    = '0' or AC_RAM_CS_N = '0'
+			else CD_RAM_DI  when CD_RAM_CS_N    = '0' or AC_RAM_CS_N = '0' or CPU_PRAM_SEL_N = '0'
 			else AC_DO      when AC_SEL_N       = '0'
 			else BRM_DO     when CPU_BRM_SEL_N  = '0'
-			else PRAM_DO    when CPU_PRAM_SEL_N = '0'
 			else ROM_DO     when CPU_ROM_SEL_N  = '0'
 			else VCE_DO     when CPU_VCE_SEL_N  = '0'
 			else VDC0_DO_LO when CPU_VDC0_SEL_N = '0'
@@ -613,19 +617,8 @@ process( CLK ) begin
 	end if;
 end process;
 
-PRAM : entity work.dpram generic map (15,8)
-port map (
-	clock		=> CLK,
-	address_a=> CPU_A(14 downto 0),
-	data_a	=> CPU_DO,
-	wren_a	=> CPU_CE and not CPU_PRAM_SEL_N and not CPU_WR_N,
-	q_a		=> PRAM_DO,
-
-	address_b=> CLR_A,
-	data_b	=> (others => '0'),
-	wren_b	=> CLR_WE
-);
-
+-- Populous's 32K, which MiSTer keeps in 32 M10K, goes by the CD RAM's way to the SDRAM. The
+-- only thing lost is MiSTer's clear of it at a cold reset; the real cartridge's isn't cleared.
 CPU_PRAM_SEL_N <= CPU_A(20) or not CPU_A(19) or not ROM_POP;
 
 
@@ -683,6 +676,12 @@ port map(
 	CD_AUDIO_WR	=> CD_AUDIO_WR,
 	CD_SUBCD_WR	=> CD_SUBCD_WR,
 	CD_DATA_END	=> CD_DATA_END,
+	ADRAM_A		=> ADRAM_A,
+	ADRAM_DI		=> ADRAM_DI,
+	ADRAM_DO		=> ADRAM_DO,
+	ADRAM_WE		=> ADRAM_WE,
+	ADRAM_RD		=> ADRAM_RD,
+
 	CD_almost_full		=> CD_almost_full,
 	AUDIO_almost_full	=> AUDIO_almost_full,
 	
@@ -696,10 +695,12 @@ port map(
 	AD_S			=> ADPCM_S
 );
 
-CD_RAM_A  <= '0' & AC_RAM_A when AC_RAM_CS_N = '0' else "1000" & CPU_A(17 downto 0);
+CD_RAM_A  <= '0' & AC_RAM_A when AC_RAM_CS_N = '0'
+        else "1000" & CPU_A(17 downto 0) when CD_RAM_CS_N = '0'
+        else "1001000" & CPU_A(14 downto 0);
 CD_RAM_DO <= CPU_DO;
-CD_RAM_RD <= CPU_PRE_RD and not (CD_RAM_CS_N and AC_RAM_CS_N);
-CD_RAM_WR <= CPU_PRE_WR and not (CD_RAM_CS_N and AC_RAM_CS_N);
+CD_RAM_RD <= CPU_PRE_RD and not (CD_RAM_CS_N and AC_RAM_CS_N and CPU_PRAM_SEL_N);
+CD_RAM_WR <= CPU_PRE_WR and not (CD_RAM_CS_N and AC_RAM_CS_N and CPU_PRAM_SEL_N);
 
 AC : ARCADE_CARD
 port map(
