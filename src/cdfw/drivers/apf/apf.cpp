@@ -204,24 +204,17 @@ uint32_t dataslot_read_lba(uint32_t length)
   else return(0);
   READ_TARGET_DATASLOT_CONTROL(0) = TARGET_DATASLOT_READ_REG;
   mainprintf("READ_TARGET_DATASLOT_LENGTH Sent %.4x\r\n", WRITE_TARGET_DATASLOT_LENGTH(0));
-  int i = 0;
-  int apf_codes;
-  do
-	{
-    apf_codes = READ_TARGET_DATASLOT_CONTROL(0);
-
-    i++;
-  } while (!(apf_codes & APF_ACK) | (i <=100));
-	do
-	{
-		apf_codes = READ_TARGET_DATASLOT_CONTROL(0);
-    if ((apf_codes & APF_ERROR) > 0)
-		{
-			mainprintf("\033[36;5;4mAPF FAILD read_lba? address %0.4X, Offset %0.4X, length %0.4X\033[0m\r\n", READ_TARGET_DATASLOT_BRIDGE_ADD(0), READ_TARGET_DATASLOT_OFFSET(0), length);
-			return (apf_codes & APF_ERROR);
-		}
-    // minimig_input_update();
-	} while (!(apf_codes & APF_DONE));
+  // Not until DONE: the error bits stay the last command's for as long as this one runs.
+  // A .sub that isn't there leaves them up, so a disc of one file, with no other open
+  // before its first read, took them for this read's and sent the sector before it had
+  // landed: the system card's LOAD ERROR on the first Run, and the second Run found the
+  // data in the cache by then.
+  uint32_t error = dataslot_result();
+  if (error)
+  {
+    mainprintf("\033[36;5;4mAPF FAILD read_lba? address %0.4X, Offset %0.4X, length %0.4X\033[0m\r\n", READ_TARGET_DATASLOT_BRIDGE_ADD(0), READ_TARGET_DATASLOT_OFFSET(0), length);
+    return error;
+  }
   int tmp = WRITE_TARGET_DATASLOT_OFFSET(0);
   WRITE_TARGET_DATASLOT_OFFSET(0) = tmp + length;
   return(0);

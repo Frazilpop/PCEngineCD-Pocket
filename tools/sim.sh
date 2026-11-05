@@ -86,6 +86,7 @@ FW_FLAGS=(-std=gnu++17 -O2 -w -Wno-c++11-narrowing -I"$B/fw/stubs" -I"$FW/driver
   # drive.cpp holds the firmware's sources, so any of them makes it again
   if [ -z "$(find "$S/drive.cpp" "$S/drive.h" "$S/drive_host.h" "$FW/drivers/cue" "$FW/drivers/apf/fileio.cpp" "$FW/app/pcecd.cpp" "$FW/tests/host/host_stubs.h" -newer drive.o 2>/dev/null || echo new)" ] && [ -f drive.o ]; then :; else
     g++ "${FW_FLAGS[@]}" -c "$S/drive.cpp" -o drive.o
+    rm -f "$B/obj/Vsim_top"	# it reaches the link through LDFLAGS, which make doesn't follow
   fi
 )
 echo "Building the simulation (Verilator; some minutes the first time)"

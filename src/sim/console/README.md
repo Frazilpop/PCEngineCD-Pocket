@@ -16,6 +16,7 @@ bash tools/sim.sh --card CARD --disc CUE --mb128 --save-in in.sav --save-out out
 bash tools/mb128-test.sh                           # the MB128 card against each kind of save, checked; five runs, about three minutes
 SIM_OUT=build/sim_b NO_BUILD=1 bash tools/sim.sh ... # on the build there is, into its own folder; several at once
 SIM_FW_PRINT=1 bash tools/sim.sh ...               # the firmware's mainprintf on stderr
+SIM_READ_EARLY=1 bash tools/sim.sh ...             # the fault of firmware before 5 Nov 2026: after a failed open, the next read is taken as finished at once
 ```
 
 `--press-file FILE` takes lines of `F:buttons[:N]` from a file as the run goes, to steer a menu you can

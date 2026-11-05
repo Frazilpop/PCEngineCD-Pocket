@@ -7,7 +7,9 @@
 //   Analogue's data slots: a file for each slot, on this Mac's disk. A read takes
 //     SIM_CARD_SEEK_US plus SIM_CARD_KB_US a KB of simulated time, and a background
 //     read's bytes reach the scratch RAM only when it is done, so firmware that uses
-//     them early sends old data here as it would there
+//     them early sends old data here as it would there. SIM_READ_EARLY=1 adds the
+//     fault firmware before 5 Nov 2026 had: after an open that failed, dataslot_read_lba
+//     took the error bits still up for its own and went on with the read running
 //   the millisecond timer: from the console's own clock
 //
 // The firmware's other work takes no time here, only its bus words and its reads.
@@ -90,12 +92,20 @@ static void split_path(dataslot_type *a, const char *p)
 // one read at a time, as the bridge does; the scratch RAM takes it when it is done
 static struct { bool busy = false; uint64_t done = 0; uint32_t at = 0; std::vector<uint8_t> bytes; } bridge;
 static struct { int slot = 0; uint32_t at = 0, offset = 0; } lba_set;
+static bool read_early, stale_error;	// SIM_READ_EARLY; a failed open's error bits, still up
+static struct { bool on = false; int slot = 0; uint32_t at = 0, offset = 0, length = 0; } queued;	// the bridge's read queue, one deep
+
+static void bridge_start(int slot, uint32_t at, uint32_t offset, uint32_t length);
 
 static void bridge_update()
 {
 	if (bridge.busy && sim_clocks() >= bridge.done) {
 		memcpy(fake_scratch + bridge.at, bridge.bytes.data(), bridge.bytes.size());
 		bridge.busy = false;
+		if (queued.on) {
+			queued.on = false;
+			bridge_start(queued.slot, queued.at, queued.offset, queued.length);
+		}
 	}
 }
 
@@ -147,12 +157,25 @@ uint32_t dataslot_read_lba_set(uint16_t slot, uint32_t address, uint32_t offset)
 uint32_t dataslot_read_lba(uint32_t length)
 {
 	bridge_start(lba_set.slot, lba_set.at, lba_set.offset, length);
+	if (read_early && stale_error) {
+		stale_error = false;
+		return 1;
+	}
+	stale_error = false;
 	bridge_wait();
 	return 0;
 }
 
 uint32_t dataslot_read_lba_fast(uint32_t length, bool wait_update)
 {
+	if (read_early && bridge.busy) {
+		queued.on = true;
+		queued.slot = lba_set.slot;
+		queued.at = lba_set.at;
+		queued.offset = lba_set.offset;
+		queued.length = length;
+		return 0;
+	}
 	bridge_start(lba_set.slot, lba_set.at, lba_set.offset, length);
 	if (wait_update) bridge_wait();
 	return 0;
@@ -171,7 +194,9 @@ int OpenFileNameDataSlot(dataslot_type *a, const char *s)
 	// as the bridge does, the name goes through the bottom of the scratch RAM
 	memset(fake_scratch, 0, 264);
 	sim_tick(open_us * CLOCKS_PER_US);
+	stale_error = false;
 	if (!open_slot(a->aft_dataslot, s)) {
+		stale_error = true;
 		file_error_enabled = 1;
 		file_error_code = 2;
 		return 1;
@@ -253,6 +278,7 @@ void drive_open(const char *card, const char *cue, const char *out_dir)
 	kb_us = env_or("SIM_CARD_KB_US", kb_us);
 	open_us = env_or("SIM_CARD_OPEN_US", open_us);
 	fw_print = getenv("SIM_FW_PRINT");
+	read_early = getenv("SIM_READ_EARLY");
 	log_file = fopen((std::string(out_dir) + "/drive.log").c_str(), "w");
 	if (!open_slot(1, card)) {
 		fprintf(stderr, "can't read the system card %s\n", card);
