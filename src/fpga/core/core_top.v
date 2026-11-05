@@ -439,11 +439,12 @@ parameter CMD_REG_ADDRESS 			= 8'hf8;
 
 	// bridge host commands
 	// synchronous to clk_74a
-	// Held until the PSRAM is clear, as the Pocket loads the save after boot (mb128_psram.sv)
-	wire psram_ready, psram_mem_ok;
-	wire psram_ready_s, psram_mem_ok_s;
-	wire status_boot_done = pll_core_locked & psram_ready_s;
-	wire status_setup_done = pll_core_locked & psram_ready_s;  // rising edge triggers a target command
+	// Held until the MB128's PSRAM is clear, as the Pocket loads the save after boot
+	// (mb128_psram.sv). Not the ADPCM chip's: a build that waited on both never started on
+	// the Pocket (5 Nov 2026), and its clear ends before the console leaves reset anyway.
+	wire [3:0] psram_status, psram_status_s;
+	wire status_boot_done = pll_core_locked & psram_status_s[2];
+	wire status_setup_done = pll_core_locked & psram_status_s[2];  // rising edge triggers a target command
 	wire status_running = reset_n;  // we are running as soon as reset_n goes high
 
 	wire            dataslot_requestread;
@@ -910,14 +911,15 @@ MPU_AFP_CORE #(
   );
 
   synch_3 #(
-      .WIDTH(2)
-  ) psram_status_s (
-      {psram_ready, psram_mem_ok},
-      {psram_ready_s, psram_mem_ok_s},
+      .WIDTH(4)
+  ) psram_status_sync (
+      psram_status,
+      psram_status_s,
       clk_74a
   );
 
-  assign CORE_INPUT = {31'd0, psram_mem_ok_s};
+  // the CD Debug overlay's P: {ADPCM cleared, MB128 cleared, ADPCM test words, MB128's}
+  assign CORE_INPUT = {28'd0, psram_status_s};
 
   wire [15:0] audio_l;
   wire [15:0] audio_r;
@@ -1052,8 +1054,9 @@ MPU_AFP_CORE #(
       .cram1_ub_n					(cram1_ub_n),
       .cram1_lb_n					(cram1_lb_n),
 
-      .psram_ready				(psram_ready),
-      .psram_mem_ok				(psram_mem_ok),
+      .psram_ready				(),
+      .psram_mem_ok				(),
+      .psram_status				(psram_status),
 		
 
       .ce_pix 						(ce_pix),

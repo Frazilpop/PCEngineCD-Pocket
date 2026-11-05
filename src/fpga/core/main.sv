@@ -131,6 +131,8 @@ module pce (
     // both chips cleared, and both chips' test words back
     output wire         psram_ready,
     output wire         psram_mem_ok,
+    // each chip apart: {ADPCM's cleared, MB128's cleared, ADPCM's test words, MB128's}
+    output wire [3:0]   psram_status,
 
     // Video
     output reg ce_pix,
@@ -778,6 +780,8 @@ end
       .ram_dout(mb128_ram_dout)
   );
 
+  wire mb128_ready, mb128_mem_ok, adpcm_ready, adpcm_mem_ok;
+
   // The save slot is MiSTer's: 2K of backup RAM in sectors 0 to 3, then the MB128.
   mb128_psram mb128_psram (
       .clk(clk_sys_42_95),
@@ -836,9 +840,9 @@ end
       .cram_lb_n(cram1_lb_n)
   );
 
-  wire mb128_ready, mb128_mem_ok, adpcm_ready, adpcm_mem_ok;
   assign psram_ready = mb128_ready & adpcm_ready;
   assign psram_mem_ok = mb128_mem_ok & adpcm_mem_ok;
+  assign psram_status = {adpcm_ready, mb128_ready, adpcm_mem_ok, mb128_mem_ok};
 
 
   wire [10:0] bram_addr;

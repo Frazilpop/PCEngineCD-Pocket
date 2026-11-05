@@ -62,7 +62,7 @@ void osd_display_info(){
     OsdWrite(s);
     OsdUpdate(3);
     OsdClear();
-    sprintf (s, "L:%d M:%d A:%d D:%d P:%d", cue.CurrentLBA(), (int)cue.state, (int)cue.latency, drive_trace.data_ends, (int)(CORE_INPUT_REGISTOR() & 1));
+    sprintf (s, "L:%d M:%d A:%d D:%d P:%X", cue.CurrentLBA(), (int)cue.state, (int)cue.latency, drive_trace.data_ends, (int)(CORE_INPUT_REGISTOR() & 15));
     OsdWrite(s);
     OsdUpdate(4);
     OsdClear();
