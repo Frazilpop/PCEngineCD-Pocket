@@ -47,6 +47,7 @@ static char cue_dir[CUE_PATH_MAX]; // folder of the CUE, ending in '/'
 static char bin_dir[CUE_PATH_MAX]; // folder of the files it names, ending in '/'
 static char path[CUE_PATH_MAX];
 static uint32_t cue_read_error; // what a read of the CUE failed with
+static uint16_t cue_slot = CUE_SLOT_FIRST;
 
 // Subcode. MiSTer's drive holds a .sub file open; here it has a slot of its own,
 // as slot 101 changes file with the tracks, and a read of it brings in a run of
@@ -79,7 +80,7 @@ static int sgets(char *out, int sz)
 	{
 		uint32_t i = cue_offset % CUE_CHUNK_SIZE;
 		if (i == 0) {
-			cue_read_error = dataslot_read(100, APF_SCRACH_ADDRESS_OFFSET + memory_offset_cue, cue_offset,
+			cue_read_error = dataslot_read(cue_slot, APF_SCRACH_ADDRESS_OFFSET + memory_offset_cue, cue_offset,
 				(cue_size - cue_offset < CUE_CHUNK_SIZE) ? cue_size - cue_offset : CUE_CHUNK_SIZE);
 			if (cue_read_error) {
 				cue_offset = cue_size;
@@ -228,10 +229,10 @@ uint16_t cue_t::LoadCUE(int dataslot) {
 	int hdr = 0;
 	int toc_size;
 	// First we get the Cue File
-	aft.aft_dataslot = 100;
+	aft.aft_dataslot = cue_slot;
 	GetFileNameDataSlot(&aft);
 	osd_trace_stage('n');
-	toc_size = DATASLOT_BRAM(1); // This is where the Cue file will be The BINs are in the 101 dataslot
+	toc_size = dataslot_size(cue_slot); // The BINs are in the 101 dataslot
 	if (toc_size == 0) return 100;
 	clearscrachram(0,16384);
 	memset((void *)&this->toc, 0, sizeof(this->toc));
@@ -423,6 +424,11 @@ void cue_t::OpenSubcode(const char *cue_name)
 	file_error_enabled = error_enabled;
 	file_error_code = error_code;
 	dataslot_open_error = open_error;
+}
+
+void cue_t::SetCueSlot(uint16_t slot)
+{
+	cue_slot = slot;
 }
 
 uint16_t cue_t::Load(int dataslot)

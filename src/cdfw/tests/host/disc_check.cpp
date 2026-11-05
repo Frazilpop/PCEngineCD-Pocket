@@ -58,10 +58,12 @@ int OpenFileNameDataSlot(dataslot_type *a, const char *s)
 	return 0;
 }
 
+uint32_t dataslot_size(uint16_t slot) { return (slot == CUE_SLOT_FIRST) ? cue_text.size() : 0; }
+
 uint32_t dataslot_read(uint16_t slot, uint32_t address, uint32_t offset, uint32_t length)
 {
 	uint32_t at = address - APF_SCRACH_ADDRESS_OFFSET;
-	if ((slot != 100) || (at + length > sizeof(fake_scratch)) || (offset + length > cue_text.size())) return 1;
+	if ((slot != CUE_SLOT_FIRST) || (at + length > sizeof(fake_scratch)) || (offset + length > cue_text.size())) return 1;
 	memcpy(fake_scratch + at, cue_text.data() + offset, length);
 	return 0;
 }

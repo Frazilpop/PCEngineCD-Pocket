@@ -6,7 +6,7 @@
 	"name": "CDRom Cue File",
 	"id": 100,
 	"required": true,
-	"parameters": "0x00000009",
+	"parameters": "0x00000008",
 	"deferload": true,
 	"size_maximum": "0x10000",
 	"extensions": ["cue"]
@@ -62,6 +62,15 @@
 	"parameters": "0x00000008",
 	"deferload": true,
 	"extensions": ["sub"]
+	},
+	{
+	"name": "Another disc",
+	"id": 103,
+	"required": false,
+	"parameters": "0x00000009",
+	"deferload": true,
+	"size_maximum": "0x10000",
+	"extensions": ["cue"]
 	}
 	]
 }

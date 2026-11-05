@@ -111,6 +111,13 @@ typedef struct
 	uint8_t f;
 } msf_t;
 
+// The disc a session starts with is the first slot, and the Pocket names the save after
+// whatever file the first slot holds at quit. So a disc chosen with the game running comes
+// through a slot of its own: choosing it through the first slot sent the console's memory
+// out under the new disc's name, over that disc's own save.
+#define CUE_SLOT_FIRST 100
+#define CUE_SLOT_OTHER 103
+
 class cue_t
 {
 public:
@@ -129,6 +136,7 @@ public:
 
 	cue_t();
 	uint16_t Load(int dataslot);
+	void SetCueSlot(uint16_t slot);	// which slot the next Load reads the CUE through
 	void Unload();
 	void Reset();
 	void OpenTray();

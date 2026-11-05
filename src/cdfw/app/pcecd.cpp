@@ -64,6 +64,7 @@ static void tray_poll()
 		while (!dataslot_ready());	// the read ahead lands in the scratch RAM the CUE is read into
 		cue.OpenTray();
 		cue.Unload();
+		cue.SetCueSlot(CUE_SLOT_OTHER);
 		pcecd_set_image(DATASLOT_BRAM(0), DATASLOT_BRAM(1));
 		tray_timer = RISCGetTimer2(TRAY_OPEN_MS);
 		tray = TRAY_OPEN;

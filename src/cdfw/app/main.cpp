@@ -90,11 +90,11 @@ void mainloop()
 	while(true){
 
 		// A user reload of a deferload slot comes only as this and a new line in the slot
-		// table (Analogue's docs, Host/Target Commands). Slot 100, the CUE, is the only
-		// one so: the system card's is set to restart the core.
+		// table (Analogue's docs, Host/Target Commands). Slot 103, Another disc, is the
+		// only one so: the system card's is set to restart the core.
 		if(DATASLOT_UPDATE_REG(0)){
 			riscusleep(2000);	// the id comes through more stages of latch than the flag
-			if (DATASLOT_UPDATE_REG(1) == 100) {
+			if (DATASLOT_UPDATE_REG(1) == 103) {
 				file_error_code = 0;
 				file_error_shown = 0;
 				save_slot_size();	// if the Pocket wrote the whole table

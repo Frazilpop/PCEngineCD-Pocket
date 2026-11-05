@@ -277,11 +277,10 @@ void drive_log(const char *what)
 void drive_change_disc(const char *cue)
 {
 	cue_path = cue;
-	if (!open_slot(100, cue)) {
+	if (!open_slot(CUE_SLOT_OTHER, cue)) {
 		fprintf(stderr, "can't read the disc's CUE %s\n", cue);
 		exit(2);
 	}
-	fake_dataslot_bram[1] = slots[100].size;
 	drive_log((std::string("disc chosen ") + cue).c_str());
 	pcecd_change_disc();
 }

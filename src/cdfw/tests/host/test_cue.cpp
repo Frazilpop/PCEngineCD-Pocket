@@ -16,6 +16,7 @@
 
 unsigned char fake_scratch[16384];
 uint32_t fake_dataslot_bram[2];
+static uint16_t cue_text_slot = CUE_SLOT_FIRST;	// the only slot holding the CUE, as on the Pocket
 dataslot_type aft;
 bool file_error_enabled;
 int file_error_code;
@@ -64,6 +65,8 @@ int OpenFileNameDataSlot(dataslot_type *a, const char *s)
 	return 0;
 }
 
+uint32_t dataslot_size(uint16_t slot) { return (slot == cue_text_slot) ? cue_text.size() : 0; }
+
 uint32_t dataslot_read(uint16_t slot, uint32_t address, uint32_t offset, uint32_t length)
 {
 	uint32_t at = address - APF_SCRACH_ADDRESS_OFFSET;
@@ -86,7 +89,7 @@ uint32_t dataslot_read(uint16_t slot, uint32_t address, uint32_t offset, uint32_
 		}
 		return fake_read_error;
 	}
-	if ((slot != 100) || (at + length > sizeof(fake_scratch)) || (offset + length > cue_text.size())) {
+	if ((slot != cue_text_slot) || (at + length > sizeof(fake_scratch)) || (offset + length > cue_text.size())) {
 		overflow = true;
 		return 1;
 	}
@@ -192,6 +195,8 @@ static result load(const std::string &path, const std::string &text, int error =
 {
 	cue_path = path;
 	cue_text = text;
+	cue_text_slot = CUE_SLOT_FIRST;
+	cue.SetCueSlot(CUE_SLOT_FIRST);
 	fake_dataslot_bram[1] = text.size();
 	opens.clear();
 	sub_opens.clear();
@@ -873,11 +878,12 @@ static int change_disc(const std::string &path, const std::string &text)
 {
 	cue_path = path;
 	cue_text = text;
-	fake_dataslot_bram[1] = text.size();
+	cue_text_slot = CUE_SLOT_OTHER;
 	opens.clear();
 	sub_opens.clear();
 	cue.OpenTray();
 	cue.Unload();
+	cue.SetCueSlot(CUE_SLOT_OTHER);
 	uint16_t ret = cue.Load(101);
 	cue.state = (ret == 1) ? CD_STATE_IDLE : CD_STATE_NODISC;
 	if (ret != 1) cue.Unload();
