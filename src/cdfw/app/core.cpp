@@ -31,6 +31,7 @@
 
 
 #include "core.h"
+#include "core_settings.h"
 #include "riscprintf.h"
 #include "hardware.h"
 #include "apf.h"
@@ -77,8 +78,8 @@ void core_reg_update(){
 	// if (old_region != AFP_REGISTOR(1) & 0x1) full_core_reset();
 	// Arcade Setup
 
-	// Bit 1, the Arcade Card, as asked; bit 2, the Memory Base 128 (core_top.v's mb128_enable).
-	CORE_OUTPUT_REGISTOR() = AFP_REGISTOR(1) & 0x6;
+	// The Arcade Card and the Memory Base 128, as asked
+	CORE_OUTPUT_REGISTOR() = core_output_bits(AFP_REGISTOR(1));
 	// if (old_arcade != AFP_REGISTOR(1) & 0x2) full_core_reset();
 
 };

@@ -17,10 +17,11 @@ define build
 	g++ $2 -std=gnu++17 -g -O1 -I$1/stubs -include host_stubs.h -o $1/test_cue test_cue.cpp $1/*.o
 endef
 
-test: build/native/test_cue build/native/test_fileio build/native/test_save_size
+test: build/native/test_cue build/native/test_fileio build/native/test_save_size build/native/test_core_settings
 	./build/native/test_cue
 	./build/native/test_fileio
 	./build/native/test_save_size
+	./build/native/test_core_settings
 
 test32: build/m32/test_cue
 	./$<
@@ -39,6 +40,11 @@ build/native/test_fileio: test_fileio.cpp host_stubs.h $(FW)/drivers/apf/fileio.
 build/native/test_save_size: test_save_size.cpp $(FW)/app/save_size.h
 	mkdir -p build/native
 	g++ $(SAN) -std=gnu++17 -g -O1 -o $@ test_save_size.cpp
+
+# Core Settings to the chips (../../app/core_settings.h), against interact.json
+build/native/test_core_settings: test_core_settings.cpp $(FW)/app/core_settings.h
+	mkdir -p build/native
+	g++ $(SAN) -std=gnu++17 -g -O1 -o $@ test_core_settings.cpp
 
 # Every disc under DIR through the loader, and the data checked where it says
 disc-check: build/native/disc_check

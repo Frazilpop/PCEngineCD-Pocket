@@ -22,6 +22,7 @@
 #include "verilated.h"
 #include "drive.h"
 #include "save_size.h"
+#include "core_settings.h"
 
 static Vsim_top *top;
 static uint64_t clocks;
@@ -346,8 +347,10 @@ int main(int argc, char **argv) {
   // A port's default is run at time 0: evaluate once before setting the inputs (Genesis's README)
   top->eval();
   top->core_reset = 1;
-  top->ac_en = arcade;
-  top->mb128_en = mb128_on;
+  // as the firmware's core_reg_update passes them on
+  uint32_t core_output = core_output_bits((arcade ? SETTING_ARCADE : 0) | (mb128_on ? SETTING_MB128 : 0));
+  top->ac_en = (core_output & OUTPUT_ARCADE) != 0;
+  top->mb128_en = (core_output & OUTPUT_MB128) != 0;
   drive_open(card_path.c_str(), disc_path.c_str(), out_dir.c_str());
   sim_tick(2000);
 
