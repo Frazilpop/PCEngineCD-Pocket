@@ -91,7 +91,7 @@ FW_FLAGS=(-std=gnu++17 -O2 -w -Wno-c++11-narrowing -I"$B/fw/stubs" -I"$FW/driver
 )
 echo "Building the simulation (Verilator; some minutes the first time)"
 SRC=("$S/sim_top.sv" "$R/../main.sv" "$R/../audio.sv" "$R/../sys/iir_filter.v" "$R/../linebuffer.v"
-     "$R/hps_ext.v" "$R/color_mix.sv" "$R/arcade.sv" "$R/mb128.sv" "$R/../mb128_psram.sv" "$R/../adpcm_psram.sv" "$S/psram_sim.sv" "$S/bram.sv" "$S/sdram_sim.sv" "$B/gen/pce_top.sv" "$S/main.cpp")
+     "$R/../state_engine.sv" "$R/hps_ext.v" "$R/color_mix.sv" "$R/arcade.sv" "$R/mb128.sv" "$R/../mb128_psram.sv" "$R/../adpcm_psram.sv" "$S/psram_sim.sv" "$S/bram.sv" "$S/sdram_sim.sv" "$B/gen/pce_top.sv" "$S/main.cpp")
 verilator --cc --exe --build -j 0 -O3 --x-assign fast --x-initial fast --noassert \
   -Wno-fatal -Wno-lint -Wno-style -Wno-MULTIDRIVEN -Wno-COMBDLY -Wno-LATCH -Wno-UNOPTFLAT -Wno-INITIALDLY -Wno-PROCASSWIRE -Wno-MULTITOP \
   --top-module sim_top -Mdir "$B/obj" ${SIM_VFLAGS:-} \

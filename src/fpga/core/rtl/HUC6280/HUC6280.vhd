@@ -35,7 +35,30 @@ entity HUC6280 is
 		VDCNUM	: in std_logic;
 		
 		AUD_LDATA: out std_logic_vector(23 downto 0);
-		AUD_RDATA: out std_logic_vector(23 downto 0)
+		AUD_RDATA: out std_logic_vector(23 downto 0);
+
+		-- A save state (docs/SAVESTATES.md). SS_HOLD stops the timer, the PSG and their
+		-- divider; SS_RST resets the chip alone, for a state to be loaded into it. Two
+		-- chains, 16 bits a clock: the CPU's (the core's 144 bits, then the timer and the
+		-- rest's 64) and the PSG's. SS_SYNC: the core at an opcode fetch with no wait
+		-- pending, where CPU_PAUSE_EN parks it; SS_PARKED: parked there. While held, the
+		-- PSG's waves are read and written at SS_WF_A (channel, entry). SS_REPARK, the clock
+		-- before a let-go: the divider and the bus as a parked CPU has them, whatever moving
+		-- its chain (the speed, the address) or a load did to them.
+		SS_HOLD		: in std_logic := '0';
+		SS_RST		: in std_logic := '0';
+		SS_REPARK	: in std_logic := '0';
+		SS_SHIFT		: in std_logic := '0';
+		SS_SHIFT_PSG: in std_logic := '0';
+		SS_SI			: in std_logic_vector(15 downto 0) := (others => '0');
+		SS_SO			: out std_logic_vector(15 downto 0);
+		SS_SO_PSG	: out std_logic_vector(15 downto 0);
+		SS_SYNC		: out std_logic;
+		SS_PARKED	: out std_logic;
+		SS_WF_A		: in std_logic_vector(7 downto 0) := (others => '0');
+		SS_WF_WE		: in std_logic := '0';
+		SS_WF_D		: in std_logic_vector(4 downto 0) := (others => '0');
+		SS_WF_Q		: out std_logic_vector(4 downto 0)
 	);
 end HUC6280;
 
@@ -82,12 +105,51 @@ architecture rtl of HUC6280 is
 	signal TMR_IRQ 		: std_logic;
 	signal TMR_IRQ_ACK 	: std_logic;
 
+	signal RSTI_N			: std_logic;
+	signal IO_CEG			: std_logic;
+	signal CORE_SYNC		: std_logic;
+	signal CORE_SI			: std_logic_vector(15 downto 0);
+	-- the chain's second part: O, the interrupt mask, the timer, IO_BUF and the divider
+	signal SS_V, SS_N		: std_logic_vector(63 downto 0);
+	signal SS_PAD			: std_logic_vector(10 downto 0);
+
 begin
 
-	
-	process(CLK, RST_N)
+	RSTI_N <= RST_N and not SS_RST;
+	IO_CEG <= IO_CE and not SS_HOLD;
+
+	SS_V(7 downto 0) <= O;
+	SS_V(10 downto 8) <= INT_MASK_PRE;
+	SS_V(13 downto 11) <= INT_MASK;
+	SS_V(20 downto 14) <= TMR_LATCH;
+	SS_V(21) <= TMR_EN;
+	SS_V(28 downto 22) <= TMR_VALUE;
+	SS_V(38 downto 29) <= std_logic_vector(TMR_PRE_CNT);
+	SS_V(39) <= TMR_RELOAD;
+	SS_V(40) <= TMR_IRQ;
+	SS_V(48 downto 41) <= IO_BUF;
+	SS_V(51 downto 49) <= std_logic_vector(IO_CLK_CNT);
+	SS_V(52) <= IO_CE;
+	SS_V(63 downto 53) <= SS_PAD;
+	SS_N <= SS_V(47 downto 0) & SS_SI;
+	CORE_SI <= SS_V(63 downto 48);
+
+	SS_SYNC <= CORE_SYNC and CPU_RDY;
+	SS_PARKED <= '1' when (CPU_CLK_CNT = 5 and CPU_CS = '1') or (CPU_CLK_CNT = 23 and CPU_CS = '0') else '0';
+
+	process(CLK)
 	begin
-		if RST_N = '0' then
+		if rising_edge(CLK) then
+			if SS_SHIFT = '1' then
+				SS_PAD <= SS_N(63 downto 53);
+			end if;
+		end if;
+	end process;
+
+	
+	process(CLK, RSTI_N)
+	begin
+		if RSTI_N = '0' then
 			CPU_CLK_CNT <= (others=>'0');
 			CPU_CE <= '0';
 			CPU_CER <= '0';
@@ -108,13 +170,28 @@ begin
 			if CPU_CLK_CNT = 1 then
 				CPU_CER <= '1';
 			end if; 
+			if SS_REPARK = '1' then
+				CPU_CE <= '0';
+				CPU_CER <= '0';
+				if CPU_CS = '1' then
+					CPU_CLK_CNT <= to_unsigned(5, 5);
+				else
+					CPU_CLK_CNT <= to_unsigned(23, 5);
+				end if;
+			end if;
 			
-			IO_CE <= '0';
-			IO_CLK_CNT <= IO_CLK_CNT + 1;
-			if IO_CLK_CNT = 5 then
-				IO_CLK_CNT <= (others=>'0');
-				IO_CE <= '1';
+			if SS_HOLD = '0' then
+				IO_CE <= '0';
+				IO_CLK_CNT <= IO_CLK_CNT + 1;
+				if IO_CLK_CNT = 5 then
+					IO_CLK_CNT <= (others=>'0');
+					IO_CE <= '1';
+				end if; 
 			end if; 
+			if SS_SHIFT = '1' then
+				IO_CLK_CNT <= unsigned(SS_N(51 downto 49));
+				IO_CE <= SS_N(52);
+			end if;
 		end if;
 	end process;
 	
@@ -126,7 +203,7 @@ begin
 	CORE : entity work.HUC6280_CPU
 	port map (
 		CLK 		=> CLK,
-		RST_N 	=> RST_N,
+		RST_N 	=> RSTI_N,
 		CE 		=> CPU_CE,
 		
 		A_OUT 	=> CPU_A,
@@ -140,7 +217,11 @@ begin
 		NMI_N 	=> NMI_N,
 		MCYCLE	=> CPU_MCYCLE,
 		CS 		=> CPU_CS,
-		VDCNUM   => VDCNUM
+		VDCNUM   => VDCNUM,
+		SS_SHIFT	=> SS_SHIFT,
+		SS_SI		=> CORE_SI,
+		SS_SO		=> SS_SO,
+		SS_SYNC	=> CORE_SYNC
 	);
 	
 	CPU_IRQ1_N <= IRQ1_N or INT_MASK(1);
@@ -151,9 +232,9 @@ begin
 	VDC_SEL <= '1' when CPU_A(20 downto 13) = x"FF" and CPU_A(12 downto 10) = "000" else '0'; -- VDC : $0000 - $03FF
 	VCE_SEL <= '1' when CPU_A(20 downto 13) = x"FF" and CPU_A(12 downto 10) = "001" else '0'; -- VCE : $0400 - $07FF
 	
-	process(CLK, RST_N)
+	process(CLK, RSTI_N)
 	begin
-		if RST_N = '0' then
+		if RSTI_N = '0' then
 			WR_N <= '1';
 			RD_N <= '1';
 			CPU_RDY <= '1';
@@ -176,11 +257,18 @@ begin
 				end if; 
 				CPU_RDY <= RDY;
 			end if; 
+			if SS_REPARK = '1' then
+				-- an opcode's fetch: read, no write, no wait pending (SS_SYNC), from no VDC or VCE
+				WR_N <= '1';
+				RD_N <= '0';
+				CPU_RDY <= '1';
+				VDC_SEL_OLD <= '0';
+			end if;
 		end if;
 	end process;
 	
-	PRE_RD <= CPU_WE_N and CPU_MCYCLE and RST_N;
-	PRE_WR <= not CPU_WE_N and CPU_MCYCLE and RST_N;
+	PRE_RD <= CPU_WE_N and CPU_MCYCLE and RSTI_N;
+	PRE_WR <= not CPU_WE_N and CPU_MCYCLE and RSTI_N;
 	
 	A <= CPU_A;
 	DO <= CPU_DO;
@@ -193,9 +281,9 @@ begin
 	
 	--KO port
 	IOP_SEL <= '1' when CPU_A(20 downto 13) = x"FF" and CPU_A(12 downto 10) = "100" else '0'; -- IOP : $1000 - $13FF
-	process(CLK, RST_N)
+	process(CLK, RSTI_N)
 	begin
-		if RST_N = '0' then
+		if RSTI_N = '0' then
 			O <= (others=>'0');
 		elsif rising_edge(CLK) then
 			if EN = '1' then
@@ -203,14 +291,17 @@ begin
 					O <= CPU_DO;
 				end if; 
 			end if; 
+			if SS_SHIFT = '1' then
+				O <= SS_N(7 downto 0);
+			end if;
 		end if;
 	end process;
 	
 	--Interrupts register
 	INT_SEL <= '1' when CPU_A(20 downto 13) = x"FF" and CPU_A(12 downto 10) = "101" else '0'; -- INT : $1400 - $17FF
-	process(CLK, RST_N)
+	process(CLK, RSTI_N)
 	begin
-		if RST_N = '0' then
+		if RSTI_N = '0' then
 			INT_MASK_PRE <= (others=>'0');
 			TMR_IRQ_ACK <= '0';
 		elsif rising_edge(CLK) then
@@ -231,15 +322,19 @@ begin
 					end case;
 				end if; 
 			end if; 
+			if SS_SHIFT = '1' then
+				INT_MASK_PRE <= SS_N(10 downto 8);
+				INT_MASK <= SS_N(13 downto 11);
+			end if;
 		end if;
 	end process;
 
 
 	-- Timer
 	TMR_SEL <= '1' when CPU_A(20 downto 13) = x"FF" and CPU_A(12 downto 10) = "011" else '0'; -- TMR : $0C00 - $0FFF
-	process( CLK, RST_N )
+	process( CLK, RSTI_N )
 	begin
-		if RST_N = '0' then
+		if RSTI_N = '0' then
 			TMR_VALUE <= (others => '0');			
 			TMR_PRE_CNT <= (others => '1'); 
 			TMR_LATCH <= (others => '0');
@@ -265,7 +360,7 @@ begin
 				TMR_IRQ <= '0';
 			end if;
 			
-			if IO_CE = '1' then
+			if IO_CEG = '1' then
 				TMR_RELOAD <= '0';
 				if TMR_EN = '1' then
 					TMR_PRE_CNT <= TMR_PRE_CNT - 1;
@@ -282,6 +377,14 @@ begin
 					TMR_VALUE <= TMR_LATCH;
 				end if; 
 			end if;
+			if SS_SHIFT = '1' then
+				TMR_LATCH <= SS_N(20 downto 14);
+				TMR_EN <= SS_N(21);
+				TMR_VALUE <= SS_N(28 downto 22);
+				TMR_PRE_CNT <= unsigned(SS_N(38 downto 29));
+				TMR_RELOAD <= SS_N(39);
+				TMR_IRQ <= SS_N(40);
+			end if;
 		end if;
 	end process;
 	
@@ -289,8 +392,8 @@ begin
 	PSG_SEL <= '1' when CPU_A(20 downto 13) = x"FF" and CPU_A(12 downto 10) = "010" else '0'; -- PSG : $0800 - $0BFF
 	PSG : entity work.psg port map (
 		CLK		=> CLK,
-		CLKEN		=> IO_CE,	-- 7.16 Mhz clock
-		RESET_N	=> RST_N,
+		CLKEN		=> IO_CEG,	-- 7.16 Mhz clock
+		RESET_N	=> RSTI_N,
 		
 		DI			=> CPU_DO,
 		A			=> CPU_A(3 downto 0),
@@ -298,13 +401,22 @@ begin
 		
 		DAC_LATCH=> '1',
 		LDATA		=> AUD_LDATA,
-		RDATA		=> AUD_RDATA
+		RDATA		=> AUD_RDATA,
+
+		SS_HOLD	=> SS_HOLD,
+		SS_SHIFT	=> SS_SHIFT_PSG,
+		SS_SI		=> SS_SI,
+		SS_SO		=> SS_SO_PSG,
+		SS_WF_A	=> SS_WF_A,
+		SS_WF_WE	=> SS_WF_WE,
+		SS_WF_D	=> SS_WF_D,
+		SS_WF_Q	=> SS_WF_Q
 	);
 		
 	IO_SEL <= IOP_SEL or INT_SEL or TMR_SEL or PSG_SEL;
-	process(CLK, RST_N)
+	process(CLK, RSTI_N)
 	begin
-		if RST_N = '0' then
+		if RSTI_N = '0' then
 			IO_BUF <= (others=>'1');
 		elsif rising_edge(CLK) then
 			if EN = '1' then
@@ -316,6 +428,9 @@ begin
 					end if; 
 				end if; 
 			end if; 
+			if SS_SHIFT = '1' then
+				IO_BUF <= SS_N(48 downto 41);
+			end if;
 		end if;
 	end process;
 	

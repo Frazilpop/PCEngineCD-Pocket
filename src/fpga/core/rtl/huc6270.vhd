@@ -38,6 +38,29 @@ entity HUC6270 is
 		
 		BG_EN		: in std_logic;
 		SPR_EN	: in std_logic;
+
+		-- A save state (docs/SAVESTATES.md). The VDC never stops: SS_HOLD only keeps the two
+		-- DMAs from starting. The registers go out as a chain of 368 bits, 16 a clock while
+		-- SS_SHIFT. What the VDC changes by itself while the CPU is frozen (the interrupt flags,
+		-- the shadows of the display registers, the vertical raster) is snapped at SS_SNAP and
+		-- put back at SS_REST, and the chain carries the snapshot. A chained register the
+		-- running VDC would change is held (the status latch). While SS_SAT, the SAT is
+		-- read and written at SS_SAT_A. SS_WIN: the vertical blank after the SAT's DMA and
+		-- before the first line's sprites; SS_IDLE: the CPU port and the DMAs have nothing
+		-- under way.
+		SS_HOLD	: in std_logic := '0';
+		SS_SHIFT	: in std_logic := '0';
+		SS_SI		: in std_logic_vector(15 downto 0) := (others => '0');
+		SS_SO		: out std_logic_vector(15 downto 0);
+		SS_SNAP	: in std_logic := '0';
+		SS_REST	: in std_logic := '0';
+		SS_SAT	: in std_logic := '0';
+		SS_SAT_A	: in std_logic_vector(7 downto 0) := (others => '0');
+		SS_SAT_WE: in std_logic := '0';
+		SS_SAT_D	: in std_logic_vector(15 downto 0) := (others => '0');
+		SS_SAT_Q	: out std_logic_vector(15 downto 0);
+		SS_WIN	: out std_logic;
+		SS_IDLE	: out std_logic;
 		
 		IW_DBG 				: out std_logic_vector(1 downto 0);
 		VM_DBG 				: out std_logic_vector(1 downto 0);
@@ -309,7 +332,199 @@ architecture rtl of HUC6270 is
 	signal CLR_A			: unsigned(7 downto 0);
 	signal CLR_WE			: std_logic;
 
+	-- the save state's: the chain, the snapshot's staging, the SAT's port
+	signal SS_V, SS_N		: std_logic_vector(367 downto 0);
+	signal SS_PAD			: std_logic_vector(14 downto 0);
+	signal SNAP_IRQ_DMA	: std_logic;
+	signal SNAP_IRQ_RCR	: std_logic;
+	signal SNAP_IRQ_DMAS	: std_logic;
+	signal SNAP_IRQ_VBL	: std_logic;
+	signal SNAP_IRQ_OVF	: std_logic;
+	signal SNAP_IRQ_COL	: std_logic;
+	signal SNAP_HSW	: std_logic_vector(4 downto 0);
+	signal SNAP_HDS	: std_logic_vector(6 downto 0);
+	signal SNAP_HDW	: std_logic_vector(6 downto 0);
+	signal SNAP_HDE	: std_logic_vector(6 downto 0);
+	signal SNAP_CM	: std_logic;
+	signal SNAP_VSW	: std_logic_vector(4 downto 0);
+	signal SNAP_VDS	: std_logic_vector(7 downto 0);
+	signal SNAP_VDW	: std_logic_vector(8 downto 0);
+	signal SNAP_VDE	: std_logic_vector(7 downto 0);
+	signal SNAP_VM	: std_logic_vector(1 downto 0);
+	signal SNAP_SM	: std_logic_vector(1 downto 0);
+	signal SNAP_SCREEN	: std_logic_vector(2 downto 0);
+	signal SNAP_BB	: std_logic;
+	signal SNAP_SB	: std_logic;
+	signal SNAP_DISP_CNT	: unsigned(9 downto 0);
+	signal SNAP_DISP_CNT_INC	: std_logic;
+	signal SNAP_RC_CNT	: unsigned(9 downto 0);
+	signal SNAP_VDISP	: std_logic;
+	signal SNAP_BURST	: std_logic;
+	signal SNAP_DISP_BREAK_EN	: std_logic;
+	signal SNAP_DISP_BREAK_LATCH	: std_logic;
+	signal SNAP_VDISP_OLD	: std_logic;
+	signal SNAP_BXR_SET	: std_logic;
+	signal SNAP_BYRL_SET	: std_logic;
+	signal SNAP_BYRH_SET	: std_logic;
+	signal SNAP_IO_BYRL_SET	: std_logic;
+	signal SNAP_IO_BYRH_SET	: std_logic;
+	signal SS_DMAS_A		: std_logic_vector(7 downto 0);
+	signal SS_DMAS_D		: std_logic_vector(15 downto 0);
+	signal SS_DMAS_WE		: std_logic;
+	signal SS_SAT_SEL		: std_logic;
+	signal SAT_B_A			: std_logic_vector(7 downto 0);
+
 begin
+
+	SS_V(4 downto 0) <= AR;
+	SS_V(20 downto 5) <= REGS(0);
+	SS_V(36 downto 21) <= REGS(1);
+	SS_V(52 downto 37) <= REGS(2);
+	SS_V(56 downto 53) <= REGS(5)(3 downto 0);
+	SS_V(58 downto 57) <= REGS(5)(7 downto 6);
+	SS_V(60 downto 59) <= REGS(5)(12 downto 11);
+	SS_V(70 downto 61) <= REGS(6)(9 downto 0);
+	SS_V(80 downto 71) <= REGS(7)(9 downto 0);
+	SS_V(89 downto 81) <= REGS(8)(8 downto 0);
+	SS_V(97 downto 90) <= REGS(9)(7 downto 0);
+	SS_V(102 downto 98) <= REGS(10)(4 downto 0);
+	SS_V(109 downto 103) <= REGS(10)(14 downto 8);
+	SS_V(116 downto 110) <= REGS(11)(6 downto 0);
+	SS_V(123 downto 117) <= REGS(11)(14 downto 8);
+	SS_V(128 downto 124) <= REGS(12)(4 downto 0);
+	SS_V(136 downto 129) <= REGS(12)(15 downto 8);
+	SS_V(145 downto 137) <= REGS(13)(8 downto 0);
+	SS_V(153 downto 146) <= REGS(14)(7 downto 0);
+	SS_V(158 downto 154) <= REGS(15)(4 downto 0);
+	SS_V(174 downto 159) <= REGS(16);
+	SS_V(190 downto 175) <= REGS(17);
+	SS_V(206 downto 191) <= REGS(18);
+	SS_V(222 downto 207) <= REGS(19);
+	SS_V(238 downto 223) <= VRR;
+	SS_V(239) <= CPU_BUSY;
+	SS_V(240) <= DMA_PEND;
+	SS_V(241) <= DMAS_PEND;
+	SS_V(248 downto 242) <= SR_LATCH;
+	SS_V(249) <= RD_N_OLD;
+	SS_V(250) <= SNAP_IRQ_DMA;
+	SS_V(251) <= SNAP_IRQ_RCR;
+	SS_V(252) <= SNAP_IRQ_DMAS;
+	SS_V(253) <= SNAP_IRQ_VBL;
+	SS_V(254) <= SNAP_IRQ_OVF;
+	SS_V(255) <= SNAP_IRQ_COL;
+	SS_V(260 downto 256) <= SNAP_HSW;
+	SS_V(267 downto 261) <= SNAP_HDS;
+	SS_V(274 downto 268) <= SNAP_HDW;
+	SS_V(281 downto 275) <= SNAP_HDE;
+	SS_V(282) <= SNAP_CM;
+	SS_V(287 downto 283) <= SNAP_VSW;
+	SS_V(295 downto 288) <= SNAP_VDS;
+	SS_V(304 downto 296) <= SNAP_VDW;
+	SS_V(312 downto 305) <= SNAP_VDE;
+	SS_V(314 downto 313) <= SNAP_VM;
+	SS_V(316 downto 315) <= SNAP_SM;
+	SS_V(319 downto 317) <= SNAP_SCREEN;
+	SS_V(320) <= SNAP_BB;
+	SS_V(321) <= SNAP_SB;
+	SS_V(331 downto 322) <= std_logic_vector(SNAP_DISP_CNT);
+	SS_V(332) <= SNAP_DISP_CNT_INC;
+	SS_V(342 downto 333) <= std_logic_vector(SNAP_RC_CNT);
+	SS_V(343) <= SNAP_VDISP;
+	SS_V(344) <= SNAP_BURST;
+	SS_V(345) <= SNAP_DISP_BREAK_EN;
+	SS_V(346) <= SNAP_DISP_BREAK_LATCH;
+	SS_V(347) <= SNAP_VDISP_OLD;
+	SS_V(348) <= SNAP_BXR_SET;
+	SS_V(349) <= SNAP_BYRL_SET;
+	SS_V(350) <= SNAP_BYRH_SET;
+	SS_V(351) <= SNAP_IO_BYRL_SET;
+	SS_V(352) <= SNAP_IO_BYRH_SET;
+	SS_V(367 downto 353) <= SS_PAD;
+	SS_N <= SS_V(351 downto 0) & SS_SI;
+	SS_SO <= SS_V(367 downto 352);
+
+	SS_WIN <= '1' when VDISP = '0' and VDISP_OLD = '0' and DMAS_EXEC = '0' and SPR_FETCH = '0' and SPR_EVAL = '0'
+	              and (DISP_CNT > VDISP_END_POS or DISP_CNT + 2 < VDS_END_POS) else '0';
+	SS_IDLE <= '1' when CPU_BUSY = '0' and CPU_BUSY_CLEAR = '0' and CPURD_PEND = '0' and CPUWR_PEND = '0' and CPURD_PEND2 = '0'
+	              and CPUWR_PEND2 = '0' and CPURD_EXEC = '0' and CPUWR_EXEC = '0' and DMA_EXEC = '0' and DMAS_EXEC = '0' else '0';
+
+	-- the snapshot's staging, written by the chain too
+	process(CLK)
+	begin
+		if rising_edge(CLK) then
+			if SS_SNAP = '1' then
+				SNAP_IRQ_DMA <= IRQ_DMA;
+				SNAP_IRQ_RCR <= IRQ_RCR;
+				SNAP_IRQ_DMAS <= IRQ_DMAS;
+				SNAP_IRQ_VBL <= IRQ_VBL;
+				SNAP_IRQ_OVF <= IRQ_OVF;
+				SNAP_IRQ_COL <= IRQ_COL;
+				SNAP_HSW <= HSW;
+				SNAP_HDS <= HDS;
+				SNAP_HDW <= HDW;
+				SNAP_HDE <= HDE;
+				SNAP_CM <= CM;
+				SNAP_VSW <= VSW;
+				SNAP_VDS <= VDS;
+				SNAP_VDW <= VDW;
+				SNAP_VDE <= VDE;
+				SNAP_VM <= VM;
+				SNAP_SM <= SM;
+				SNAP_SCREEN <= SCREEN;
+				SNAP_BB <= BB;
+				SNAP_SB <= SB;
+				SNAP_DISP_CNT <= DISP_CNT;
+				SNAP_DISP_CNT_INC <= DISP_CNT_INC;
+				SNAP_RC_CNT <= RC_CNT;
+				SNAP_VDISP <= VDISP;
+				SNAP_BURST <= BURST;
+				SNAP_DISP_BREAK_EN <= DISP_BREAK_EN;
+				SNAP_DISP_BREAK_LATCH <= DISP_BREAK_LATCH;
+				SNAP_VDISP_OLD <= VDISP_OLD;
+				SNAP_BXR_SET <= BXR_SET;
+				SNAP_BYRL_SET <= BYRL_SET;
+				SNAP_BYRH_SET <= BYRH_SET;
+				SNAP_IO_BYRL_SET <= IO_BYRL_SET;
+				SNAP_IO_BYRH_SET <= IO_BYRH_SET;
+			end if;
+			if SS_SHIFT = '1' then
+				SNAP_IRQ_DMA <= SS_N(250);
+				SNAP_IRQ_RCR <= SS_N(251);
+				SNAP_IRQ_DMAS <= SS_N(252);
+				SNAP_IRQ_VBL <= SS_N(253);
+				SNAP_IRQ_OVF <= SS_N(254);
+				SNAP_IRQ_COL <= SS_N(255);
+				SNAP_HSW <= SS_N(260 downto 256);
+				SNAP_HDS <= SS_N(267 downto 261);
+				SNAP_HDW <= SS_N(274 downto 268);
+				SNAP_HDE <= SS_N(281 downto 275);
+				SNAP_CM <= SS_N(282);
+				SNAP_VSW <= SS_N(287 downto 283);
+				SNAP_VDS <= SS_N(295 downto 288);
+				SNAP_VDW <= SS_N(304 downto 296);
+				SNAP_VDE <= SS_N(312 downto 305);
+				SNAP_VM <= SS_N(314 downto 313);
+				SNAP_SM <= SS_N(316 downto 315);
+				SNAP_SCREEN <= SS_N(319 downto 317);
+				SNAP_BB <= SS_N(320);
+				SNAP_SB <= SS_N(321);
+				SNAP_DISP_CNT <= unsigned(SS_N(331 downto 322));
+				SNAP_DISP_CNT_INC <= SS_N(332);
+				SNAP_RC_CNT <= unsigned(SS_N(342 downto 333));
+				SNAP_VDISP <= SS_N(343);
+				SNAP_BURST <= SS_N(344);
+				SNAP_DISP_BREAK_EN <= SS_N(345);
+				SNAP_DISP_BREAK_LATCH <= SS_N(346);
+				SNAP_VDISP_OLD <= SS_N(347);
+				SNAP_BXR_SET <= SS_N(348);
+				SNAP_BYRL_SET <= SS_N(349);
+				SNAP_BYRH_SET <= SS_N(350);
+				SNAP_IO_BYRL_SET <= SS_N(351);
+				SNAP_IO_BYRH_SET <= SS_N(352);
+				SS_PAD <= SS_N(367 downto 353);
+			end if;
+		end if;
+	end process;
 
 	process(CLK, RST_N)
 	begin
@@ -365,6 +580,13 @@ begin
 			if DCK_CE = '0' and HSYNC_F = '1' then
 				RES7M <= "1";
 			end if; 
+			if SS_REST = '1' then
+				HSW <= SNAP_HSW;
+				HDS <= SNAP_HDS;
+				HDW <= SNAP_HDW;
+				HDE <= SNAP_HDE;
+				CM <= SNAP_CM;
+			end if;
 		end if;
 	end process;
 	
@@ -488,6 +710,24 @@ begin
 					SB <= CR_SB;
 				end if;
 			end if; 
+			if SS_REST = '1' then
+				VSW <= SNAP_VSW;
+				VDS <= SNAP_VDS;
+				VDW <= SNAP_VDW;
+				VDE <= SNAP_VDE;
+				VM <= SNAP_VM;
+				SM <= SNAP_SM;
+				SCREEN <= SNAP_SCREEN;
+				BB <= SNAP_BB;
+				SB <= SNAP_SB;
+				DISP_CNT <= SNAP_DISP_CNT;
+				DISP_CNT_INC <= SNAP_DISP_CNT_INC;
+				RC_CNT <= SNAP_RC_CNT;
+				VDISP <= SNAP_VDISP;
+				BURST <= SNAP_BURST;
+				DISP_BREAK_EN <= SNAP_DISP_BREAK_EN;
+				DISP_BREAK_LATCH <= SNAP_DISP_BREAK_LATCH;
+			end if;
 		end if;
 	end process;
 	
@@ -750,16 +990,21 @@ begin
 	--Sprites
 	DMAS_SAT_WE <= DCK_CE when DMAS_EXEC = '1' and SLOT = CPU else '0'; 
 	SAT_ADDR <= std_logic_vector(SPR_EVAL_X) when CLR_WE = '0' else std_logic_vector(CLR_A);
+	SAT_B_A <= SS_SAT_A when SS_SAT = '1' else SAT_ADDR;
+	SS_DMAS_A <= SS_SAT_A when SS_SAT = '1' else DMAS_SAT_ADDR;
+	SS_DMAS_D <= SS_SAT_D when SS_SAT = '1' else RAM_DI;
+	SS_DMAS_WE <= SS_SAT_WE when SS_SAT = '1' else DMAS_SAT_WE;
+	SS_SAT_Q <= SAT_Q;
 	
 	SAT : entity work.dpram generic map (8,16)
 	port map(
 		clock		=> CLK,
 		
-		data_a	=> RAM_DI,
-		address_a=> DMAS_SAT_ADDR,
-		wren_a	=> DMAS_SAT_WE,
+		data_a	=> SS_DMAS_D,
+		address_a=> SS_DMAS_A,
+		wren_a	=> SS_DMAS_WE,
 		
-		address_b=> SAT_ADDR,
+		address_b=> SAT_B_A,
 		data_b   => (others => '0'),
 		wren_b   => CLR_WE,
 		q_b		=> SAT_Q
@@ -989,6 +1234,9 @@ begin
 			if CS_N = '0' and RD_N = '0' and CPU_CE = '1' and A(1) = '0' and (BYTEWORD = '0' or A(0) = '0') then
 				IRQ_OVF <= '0';						
 			end if; 
+			if SS_REST = '1' then
+				IRQ_OVF <= SNAP_IRQ_OVF;
+			end if;
 		end if;
 	end process;
 	
@@ -1057,6 +1305,9 @@ begin
 			if CS_N = '0' and RD_N = '0' and CPU_CE = '1' and A(1) = '0' and (BYTEWORD = '0' or A(0) = '0') then
 				IRQ_COL <= '0';
 			end if; 
+			if SS_REST = '1' then
+				IRQ_COL <= SNAP_IRQ_COL;
+			end if;
 		end if;
 	end process;
 	
@@ -1342,7 +1593,7 @@ begin
 					end if; 
 				end if; 
 				
-				if DMA_PEND = '1' and (BURST = '1' or VDISP = '0') then
+				if DMA_PEND = '1' and (BURST = '1' or VDISP = '0') and SS_HOLD = '0' then
 					DMA_PEND <= '0';
 					DMA_EXEC <= '1';
 				elsif DMA_EXEC = '1' and BURST = '0' and VDISP = '1' then
@@ -1404,7 +1655,7 @@ begin
 						if CR_IE_VC = '1' then
 							IRQ_VBL <= '1';
 						end if;
-						if DCR_DSR = '1' or DMAS_PEND = '1' then
+						if (DCR_DSR = '1' or DMAS_PEND = '1') and SS_HOLD = '0' then
 							DMAS_PEND <= '0';
 							DMAS_VRAM_ADDR <= DVSSR;
 							DMAS_SAT_ADDR <= (others=>'0');
@@ -1441,6 +1692,48 @@ begin
 					BYRH_SET <= '1';
 				end if;
 			end if;
+			if SS_REST = '1' then
+				IRQ_DMA <= SNAP_IRQ_DMA;
+				IRQ_RCR <= SNAP_IRQ_RCR;
+				IRQ_DMAS <= SNAP_IRQ_DMAS;
+				IRQ_VBL <= SNAP_IRQ_VBL;
+				VDISP_OLD <= SNAP_VDISP_OLD;
+				BXR_SET <= SNAP_BXR_SET;
+				BYRL_SET <= SNAP_BYRL_SET;
+				BYRH_SET <= SNAP_BYRH_SET;
+				IO_BYRL_SET <= SNAP_IO_BYRL_SET;
+				IO_BYRH_SET <= SNAP_IO_BYRH_SET;
+			end if;
+			if SS_SHIFT = '1' then
+				AR <= SS_N(4 downto 0);
+				REGS(0) <= SS_N(20 downto 5);
+				REGS(1) <= SS_N(36 downto 21);
+				REGS(2) <= SS_N(52 downto 37);
+				REGS(5)(3 downto 0) <= SS_N(56 downto 53);
+				REGS(5)(7 downto 6) <= SS_N(58 downto 57);
+				REGS(5)(12 downto 11) <= SS_N(60 downto 59);
+				REGS(6)(9 downto 0) <= SS_N(70 downto 61);
+				REGS(7)(9 downto 0) <= SS_N(80 downto 71);
+				REGS(8)(8 downto 0) <= SS_N(89 downto 81);
+				REGS(9)(7 downto 0) <= SS_N(97 downto 90);
+				REGS(10)(4 downto 0) <= SS_N(102 downto 98);
+				REGS(10)(14 downto 8) <= SS_N(109 downto 103);
+				REGS(11)(6 downto 0) <= SS_N(116 downto 110);
+				REGS(11)(14 downto 8) <= SS_N(123 downto 117);
+				REGS(12)(4 downto 0) <= SS_N(128 downto 124);
+				REGS(12)(15 downto 8) <= SS_N(136 downto 129);
+				REGS(13)(8 downto 0) <= SS_N(145 downto 137);
+				REGS(14)(7 downto 0) <= SS_N(153 downto 146);
+				REGS(15)(4 downto 0) <= SS_N(158 downto 154);
+				REGS(16) <= SS_N(174 downto 159);
+				REGS(17) <= SS_N(190 downto 175);
+				REGS(18) <= SS_N(206 downto 191);
+				REGS(19) <= SS_N(222 downto 207);
+				VRR <= SS_N(238 downto 223);
+				CPU_BUSY <= SS_N(239);
+				DMA_PEND <= SS_N(240);
+				DMAS_PEND <= SS_N(241);
+			end if;
 		end if;
 	end process;
 	
@@ -1450,10 +1743,17 @@ begin
 			SR_LATCH <= (others=>'0');
 			RD_N_OLD <= '1';
 		elsif rising_edge(CLK) then
+			if SS_HOLD = '0' then	-- (held: it is on the chain, which would pass through it)
 			RD_N_OLD <= RD_N;
 			if RD_N = '0' and RD_N_OLD = '1' then
 				SR_LATCH <= CPU_BUSY & IRQ_VBL & IRQ_DMA & IRQ_DMAS & IRQ_RCR & IRQ_OVF & IRQ_COL;
 			end if;
+			end if;
+			if SS_SHIFT = '1' then
+				SR_LATCH <= SS_N(248 downto 242);
+				RD_N_OLD <= SS_N(249);
+			end if;
+
 		end if;
 	end process;
 

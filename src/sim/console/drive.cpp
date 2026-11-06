@@ -242,7 +242,20 @@ void HPS_io_file_tx_data(const uint8_t *addr, uint32_t len, int cmd)
 	HPS_DisableIO();
 }
 
-uint32_t RISCGetTimer2(uint32_t fraction) { return (uint32_t)(sim_clocks() / CLOCKS_PER_MS) + fraction; }
+// The drive's clock, which a save state stops while the drive is parked: to the clock here,
+// so a loaded run's drive goes on exactly as the saving run's
+static uint64_t clock_offset;
+uint32_t RISCGetTimer2(uint32_t fraction) { return (uint32_t)((sim_clocks() - clock_offset) / CLOCKS_PER_MS) + fraction; }
+void drive_clock_get(uint32_t *hi, uint32_t *lo) { uint64_t c = sim_clocks() - clock_offset; *hi = c >> 32; *lo = (uint32_t)c; }
+void drive_clock_set(uint32_t hi, uint32_t lo) { clock_offset = sim_clocks() - ((uint64_t)hi << 32 | lo); }
+
+// a save state's hooks (app/state.h): the park's loop looks at its bit a clock at a time, so
+// the drive goes on at the same clock after a let-go in a saved run and a loaded one
+uint8_t sim_drive_block[2048];
+bool core_park_asked() { return sim_drv_park(); }
+bool core_state_in() { return sim_drv_state_in(); }
+void core_park_wait() { sim_tick(1); }
+void core_set_parked(bool parked, bool restored) { sim_drv_parked(parked, restored); }
 bool RISCCheckTimer2(uint32_t time) { return !time || RISCGetTimer2(0) >= time; }
 
 /* ----------------------------------------------------------------------- the rest */

@@ -323,6 +323,23 @@ module core_top (
 	wire [31:0] 	mpu_ram_bridge_rd_data;
 	wire [31:0]  	mpu_scrachram_bridge_rd_data;
 	wire [31:0]  	mpu_psram_bridge_rd_data;
+
+  // (a save state's: state_bridge.sv, below)
+  // the drive's block in a save state's file: a read of it fetches the MPU's word for the next read to take, as APF
+  // reads one word ahead; a write of it goes to the MPU's RAM
+  wire        ss_blk_addr = bridge_addr[31:11] == 21'h080001;	// 0x40000800 to 0x40000FFF
+  wire [31:0] mpu_bridge_addr = ss_blk_addr ? {20'h8000F, 1'b0, bridge_addr[10:0]} : bridge_addr;
+  wire [31:0] ss_blk_q, ss_bridge_rd_data;
+  reg         ss_blk_rd = 0, ss_blk_last = 0, ss_rd_old = 0;
+  always @(posedge clk_74a) begin
+    ss_rd_old <= bridge_rd;
+    ss_blk_rd <= 0;
+    if (bridge_rd & ~ss_rd_old && bridge_addr[31:28] == 4'h4) begin
+      ss_blk_last <= ss_blk_addr;
+      ss_blk_rd <= ss_blk_addr;
+    end
+  end
+
 	
 	wire [2:0]		video_slot_output;
   // for bridge write data, we just broadcast it to all bus devices
@@ -377,6 +394,10 @@ parameter CMD_REG_ADDRESS 			= 8'hf8;
       end
       CMD_REG_ADDRESS : begin
         bridge_rd_data <= cmd_bridge_rd_data;
+      end
+      8'h40 : begin
+        // a save state's file; the drive's block, by the read the data answers, the MPU's
+        bridge_rd_data <= ss_blk_last ? ss_blk_q : ss_bridge_rd_data;
       end
     endcase
   end
@@ -660,7 +681,7 @@ MPU_AFP_CORE #(
 		.reset_out							( reset_mpu_l ),						// Able to restart the core from the MPU if required
 		
 		// APF Bus controll
-		.bridge_addr            		( bridge_addr ),
+		.bridge_addr            		( mpu_bridge_addr ),
 		.bridge_rd              		( bridge_rd ),
 		.mpu_reg_bridge_rd_data       ( mpu_reg_bridge_rd_data ),		// Used for interactions
 		.mpu_ram_bridge_rd_data       ( mpu_ram_bridge_rd_data ),		// Used for ram up/download	
@@ -668,6 +689,9 @@ MPU_AFP_CORE #(
 		.mpu_psram_bridge_rd_data		( mpu_psram_bridge_rd_data ),
 		.bridge_wr              		( bridge_wr ),
 		.bridge_wr_data         		( bridge_wr_data ),
+		.blk_rd							( ss_blk_rd ),
+		.blk_addr						( {12'h00F, 1'b0, bridge_addr[10:0]} ),
+		.blk_q							( ss_blk_q ),
 	  
 	   // Debugging to the Cart	
 		.rxd									( RXDATA ),
@@ -918,8 +942,64 @@ MPU_AFP_CORE #(
       clk_74a
   );
 
+  // ---- save states (docs/SAVESTATES.md): the Pocket's bridge to main.sv's state_engine.sv ----
+  // The file is the 0x4 window, 0x40000000. Its bytes 0x800 to 0xFFF are the drive's block, the
+  // MPU's RAM from 0xF000, read and written there through MPU_AFP_CORE. Not yet offered to the
+  // Pocket (savestate_supported 0): the first build that offers it is the one played on it.
+  wire        ss_save, ss_load, ss_go, ss_rd, ss_wr;
+  wire  [1:0] ss_status;
+  wire [20:0] ss_addr, ss_words;
+  wire [15:0] ss_do, ss_di;
+  wire [31:0] ss_card_size, ss_card_sum;
+
+  assign savestate_supported   = 1'b0;
+  assign savestate_addr        = 32'h40000000;
+  assign savestate_size        = {10'd0, ss_words, 1'b0};
+  assign savestate_maxloadsize = 32'h00290000;
+
+  state_bridge state_bridge (
+      .clk_74a(clk_74a),
+      .clk_sys(clk_sys_42_95),
+      .bridge_endian_little(bridge_endian_little),
+      .bridge_addr(bridge_addr),
+      .bridge_rd(bridge_rd),
+      .bridge_rd_data(ss_bridge_rd_data),
+      .bridge_wr(bridge_wr),
+      .bridge_wr_data(bridge_wr_data),
+      .savestate_start(savestate_start),
+      .savestate_start_ack(savestate_start_ack),
+      .savestate_start_busy(savestate_start_busy),
+      .savestate_start_ok(savestate_start_ok),
+      .savestate_start_err(savestate_start_err),
+      .savestate_load(savestate_load),
+      .savestate_load_ack(savestate_load_ack),
+      .savestate_load_busy(savestate_load_busy),
+      .savestate_load_ok(savestate_load_ok),
+      .savestate_load_err(savestate_load_err),
+      .card_size(ss_card_size),
+      .card_sum(ss_card_sum),
+      .mb128_on(mb128_enable_s),
+      .ac_on(CORE_OUTPUT[1]),
+      .ss_words(ss_words),
+      .ss_save(ss_save),
+      .ss_load(ss_load),
+      .ss_go(ss_go),
+      .ss_status(ss_status),
+      .ss_addr(ss_addr),
+      .ss_rd(ss_rd),
+      .ss_do(ss_do),
+      .ss_wr(ss_wr),
+      .ss_di(ss_di),
+      .pause_lift()
+  );
+
   // the CD Debug overlay's P: {ADPCM cleared, MB128 cleared, ADPCM test words, MB128's}
-  assign CORE_INPUT = {28'd0, psram_status_s};
+  // a save state's drive (state_engine.sv, the firmware's pcecd.cpp): CORE_INPUT[4] park,
+  // [5] a load's words all in; CORE_OUTPUT[3] parked, [4] its block read back
+  wire ss_drv_park, ss_drv_in, ss_drv_park_s, ss_drv_in_s, ss_drv_parked_s, ss_drv_restored_s;
+  synch_3 #(.WIDTH(2)) ss_drv_in_sync ({ss_drv_in, ss_drv_park}, {ss_drv_in_s, ss_drv_park_s}, clk_74a);
+  synch_3 #(.WIDTH(2)) ss_drv_out_sync (CORE_OUTPUT[4:3], {ss_drv_restored_s, ss_drv_parked_s}, clk_sys_42_95);
+  assign CORE_INPUT = {26'd0, ss_drv_in_s, ss_drv_park_s, psram_status_s};
 
   wire [15:0] audio_l;
   wire [15:0] audio_r;
@@ -1072,7 +1152,25 @@ MPU_AFP_CORE #(
 
       .audio_l						(audio_l),
       .audio_r						(audio_r),
-		.EXT_BUS						(EXT_BUS)
+		.EXT_BUS						(EXT_BUS),
+
+		// save states, through state_bridge.sv
+		.SS_SAVE						(ss_save),
+		.SS_LOAD						(ss_load),
+		.SS_GO						(ss_go),
+		.SS_STATUS					(ss_status),
+		.SS_ADDR						(ss_addr),
+		.SS_RD						(ss_rd),
+		.SS_DO						(ss_do),
+		.SS_WR						(ss_wr),
+		.SS_DI						(ss_di),
+		.SS_CARD_SIZE				(ss_card_size),
+		.SS_CARD_SUM				(ss_card_sum),
+		.SS_WORDS					(ss_words),
+		.SS_DRV_PARK				(ss_drv_park),
+		.SS_DRV_IN					(ss_drv_in),
+		.SS_DRV_PARKED				(ss_drv_parked_s),
+		.SS_DRV_RESTORED			(ss_drv_restored_s)
   );
   
   

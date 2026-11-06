@@ -23,7 +23,14 @@ entity HUC6280_CPU is
 		VDCNUM	: in std_logic;
 
 		MCYCLE  	: out std_logic;
-		CS  		: out std_logic
+		CS  		: out std_logic;
+
+		-- A save state (docs/SAVESTATES.md): the registers as a chain of 144 bits, 16 a clock
+		-- while SS_SHIFT, in at SS_SI and out at SS_SO. SS_SYNC: at an opcode fetch, out of reset.
+		SS_SHIFT	: in std_logic := '0';
+		SS_SI		: in std_logic_vector(15 downto 0) := (others => '0');
+		SS_SO		: out std_logic_vector(15 downto 0);
+		SS_SYNC	: out std_logic
 	);
 end HUC6280_CPU;
 
@@ -84,9 +91,41 @@ architecture rtl of HUC6280_CPU is
 	signal NMI_SYNC 		: std_logic;
 	signal NMI_ACTIVE 	: std_logic;
 
+	-- The save state's chain. The NMI's flags never move, NMI_N being tied high. The temporaries (T, DR, SH, DH, LH, AA, TALT, SavedCarry, the
+	-- ALU's SavedC) are written before they are read by every opcode, and at an opcode fetch
+	-- the microword is the fixed fetch word, so neither is on it.
+	constant SS_LEN		: integer := 144;
+	signal SS_V, SS_N		: std_logic_vector(SS_LEN-1 downto 0);
+	signal SS_PAD			: std_logic_vector(8 downto 0);
+
 begin
 	
 	EN <= RDY and CE;
+
+	SS_V(7 downto 0) <= A;
+	SS_V(15 downto 8) <= X;
+	SS_V(23 downto 16) <= Y;
+	SS_V(31 downto 24) <= SP;
+	SS_V(39 downto 32) <= P;
+	SS_V(55 downto 40) <= PC;
+	SS_MPR: for i in 0 to 7 generate
+		SS_V(63+8*i downto 56+8*i) <= MPR(i);
+	end generate;
+	SS_V(127 downto 120) <= MPR_LAST;
+	SS_V(134 downto 128) <= IRQT_INT & IRQ2_INT & IRQ1_INT & NMI_INT & RES_INT & GOT_INT & CS;
+	SS_V(143 downto 135) <= SS_PAD;
+	SS_N <= SS_V(SS_LEN-17 downto 0) & SS_SI;
+	SS_SO <= SS_V(SS_LEN-1 downto SS_LEN-16);
+	SS_SYNC <= '1' when STATE = "00000" and RES_INT = '0' else '0';
+
+	process(CLK)
+	begin
+		if rising_edge(CLK) then
+			if SS_SHIFT = '1' then
+				SS_PAD <= SS_N(143 downto 135);
+			end if;
+		end if;
+	end process;
 
 	NEXT_IR <= IR when (STATE /= "00000") else
 				 x"00" when GOT_INT = '1' else 
@@ -270,6 +309,11 @@ begin
 					Y <= ALU_OUT;
 				end if; 
 			end if; 
+			if SS_SHIFT = '1' then
+				A <= SS_N(7 downto 0);
+				X <= SS_N(15 downto 8);
+				Y <= SS_N(23 downto 16);
+			end if;
 		end if;
 	end process;
 				  
@@ -306,6 +350,9 @@ begin
 					when others => null;
 				end case;
 			end if; 
+			if SS_SHIFT = '1' then
+				SP <= SS_N(31 downto 24);
+			end if;
 		end if;
 	end process;
 	
@@ -348,6 +395,9 @@ begin
 				if NEXT_IR /= x"00" and STATE = "00000" then
 					P(FLAG_T) <= '0';  
 				end if;
+			end if;
+			if SS_SHIFT = '1' then
+				P <= SS_N(39 downto 32);
 			end if;
 		end if;
 	end process;
@@ -392,6 +442,12 @@ begin
 					MPR_LAST <= A;
 				end if;
 			end if; 
+			if SS_SHIFT = '1' then
+				for i in 0 to 7 loop
+					MPR(i) <= SS_N(63+8*i downto 56+8*i);
+				end loop;
+				MPR_LAST <= SS_N(127 downto 120);
+			end if;
 		end if;
 	end process;
 	
@@ -447,6 +503,8 @@ begin
 		X     		=> X, 
 		Y     		=> Y, 
 		DR    		=> DR,
+		SS_WE			=> SS_SHIFT,
+		SS_PC			=> SS_N(55 downto 40),
 		PC     		=> PC, 
 		AA     		=> AA
 	);
@@ -499,6 +557,14 @@ begin
 					IRQ2_INT <= not IRQ2_N and not P(FLAG_I);
 					IRQT_INT <= not IRQT_N and not P(FLAG_I);
 				end if;
+			end if;
+			if SS_SHIFT = '1' then
+				IRQT_INT <= SS_N(134);
+				IRQ2_INT <= SS_N(133);
+				IRQ1_INT <= SS_N(132);
+				NMI_INT <= SS_N(131);
+				RES_INT <= SS_N(130);
+				GOT_INT <= SS_N(129);
 			end if;
 		end if;
 	end process; 
@@ -562,6 +628,9 @@ begin
 					CS <= IR(7);
 				end if; 
 			end if; 
+			if SS_SHIFT = '1' then
+				CS <= SS_N(128);
+			end if;
 		end if;
 	end process;
 	

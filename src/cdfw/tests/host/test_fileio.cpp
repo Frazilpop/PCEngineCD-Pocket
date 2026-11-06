@@ -41,6 +41,13 @@ uint32_t dataslot_read_lba_set(uint16_t slot, uint32_t address, uint32_t offset)
 }
 uint32_t dataslot_read_lba(uint32_t length) { full_reads++; bridge_read(length); return 0; }
 uint32_t dataslot_read_lba_fast(uint32_t length, bool) { fast_reads++; bridge_read(length); return 0; }
+// a save state's load reads the cache's buffers again (RISCFileCacheLoad)
+uint32_t dataslot_read(uint16_t slot, uint32_t address, uint32_t offset, uint32_t length)
+{
+	dataslot_read_lba_set(slot, address, offset);
+	bridge_read(length);
+	return 0;
+}
 int OpenFileNameDataSlot(dataslot_type *a, const char *s)
 {
 	// as the bridge does, the name goes through the bottom of the scratch RAM

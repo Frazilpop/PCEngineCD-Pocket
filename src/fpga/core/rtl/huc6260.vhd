@@ -44,7 +44,25 @@ entity huc6260 is
 		VS_N		: out std_logic;
 		HS_N		: out std_logic;
 		HBL		: out std_logic;
-		VBL		: out std_logic
+		VBL		: out std_logic;
+
+		-- A save state (docs/SAVESTATES.md): the raster's position, which a let-go waits for;
+		-- the registers as a chain of 48 bits, 16 a clock while SS_SHIFT; while SS_MEM, the
+		-- palette's CPU port is the engine's (SS_MA, SS_MWE, SS_MD, and SS_MQ a clock later).
+		-- SS_IDLE: the CPU port has nothing on its way. The counters and the syncs are never
+		-- stopped or written, so the Pocket's picture keeps its sync through a save or a load.
+		SS_VPOS	: out std_logic_vector(9 downto 0);
+		SS_HPOS	: out std_logic_vector(11 downto 0);
+		SS_IDLE	: out std_logic;
+		SS_HOLD	: in  std_logic := '0';		-- the port's machine held: it is on the chain
+		SS_SHIFT	: in  std_logic := '0';
+		SS_SI		: in  std_logic_vector(15 downto 0) := (others => '0');
+		SS_SO		: out std_logic_vector(15 downto 0);
+		SS_MEM	: in  std_logic := '0';
+		SS_MA		: in  std_logic_vector(8 downto 0) := (others => '0');
+		SS_MWE	: in  std_logic := '0';
+		SS_MD		: in  std_logic_vector(8 downto 0) := (others => '0');
+		SS_MQ		: out std_logic_vector(8 downto 0)
 	);
 end huc6260;
 
@@ -105,6 +123,13 @@ signal CLKEN_FF_F	: std_logic;
 signal MULTIRES_FF : std_logic;
 signal MULTIRES   : std_logic;
 
+-- the save state's
+signal SS_V, SS_N	: std_logic_vector(47 downto 0);
+signal SS_PAD		: std_logic_vector(7 downto 0);
+signal PAL_A		: std_logic_vector(8 downto 0);
+signal PAL_DI		: std_logic_vector(8 downto 0);
+signal PAL_WE		: std_logic;
+
 begin
 
 TOP_BL_LINES <= TOP_BL_LINES_E when RVBL = '1' else TOP_BL_LINES_E+4;
@@ -115,14 +140,34 @@ ram : entity work.dpram generic map (addr_width => 9, data_width => 9, mem_init_
 port map(
 	clock			=> CLK,
 
-	address_a	=> RAM_A,
-	data_a		=> RAM_DI,
-	wren_a		=> RAM_WE,
+	address_a	=> PAL_A,
+	data_a		=> PAL_DI,
+	wren_a		=> PAL_WE,
 	q_a			=> RAM_DO,
 	
 	address_b	=> COLNO,
 	q_b			=> COLOR
 );
+
+PAL_A  <= SS_MA  when SS_MEM = '1' else RAM_A;
+PAL_DI <= SS_MD  when SS_MEM = '1' else RAM_DI;
+PAL_WE <= SS_MWE when SS_MEM = '1' else RAM_WE;
+SS_MQ  <= RAM_DO;
+
+SS_VPOS <= V_CNT;
+SS_HPOS <= H_CNT;
+SS_IDLE <= '1' when CTRL = CTRL_IDLE and RAM_WE = '0' else '0';
+
+SS_V(7 downto 0) <= CR;
+SS_V(16 downto 8) <= RAM_A;
+SS_V(25 downto 17) <= RAM_DI;
+SS_V(33 downto 26) <= DO;
+SS_V(36 downto 34) <= PREV_A;
+SS_V(38 downto 37) <= "00" when CTRL = CTRL_IDLE else "01" when CTRL = CTRL_WAIT else "10";
+SS_V(39) <= RAM_WE;
+SS_V(47 downto 40) <= SS_PAD;
+SS_N <= SS_V(31 downto 0) & SS_SI;
+SS_SO <= SS_V(47 downto 32);
 
 process( CLK )
 begin
@@ -135,7 +180,7 @@ begin
 			
 			PREV_A <= (others => '0');
 			CTRL <= CTRL_IDLE;
-		else
+		elsif SS_HOLD = '0' then
 			case CTRL is
 			
 			when CTRL_IDLE =>
@@ -196,6 +241,20 @@ begin
 			
 			when others => null;
 			end case;
+		end if;
+		if SS_SHIFT = '1' then
+			CR <= SS_N(7 downto 0);
+			RAM_A <= SS_N(16 downto 8);
+			RAM_DI <= SS_N(25 downto 17);
+			DO <= SS_N(33 downto 26);
+			PREV_A <= SS_N(36 downto 34);
+			case SS_N(38 downto 37) is
+				when "00" => CTRL <= CTRL_IDLE;
+				when "01" => CTRL <= CTRL_WAIT;
+				when others => CTRL <= CTRL_INCR;
+			end case;
+			RAM_WE <= SS_N(39);
+			SS_PAD <= SS_N(47 downto 40);
 		end if;
 	end if;
 end process;

@@ -111,6 +111,22 @@ typedef struct
 	uint8_t f;
 } msf_t;
 
+// A save state (app/state.h): the drive's state but its TOC, which comes with the disc
+typedef struct
+{
+	uint32_t latency, audiodelay;
+	uint8_t state, isData, CDDAMode, region;
+	int loaded, has_status;
+	bool data_req, can_read_next, tray_open, disc_changed, fast_seek, int_pend, subq_pend;
+	int index, current_track, lba, cnt, scanOffset, audioLength, audioOffset, CDDAStart, CDDAEnd, CDDAFirst;
+	sense_t sense;
+	uint16_t stat, cue_slot;
+	uint8_t comm[14];
+	int chd_hunknum;
+	int sub_first, sub_count, sub_last_lba;	// the subcode's cache, read again on a load
+	uint8_t sub_tx[96];
+} cue_state_t;
+
 // The disc a session starts with is the first slot, and the Pocket names the save after
 // whatever file the first slot holds at quit. So a disc chosen with the game running comes
 // through a slot of its own: choosing it through the first slot sent the console's memory
@@ -151,6 +167,9 @@ public:
 	void SetRegion(uint8_t rgn);
 	void SetFastSeek(bool fast);
 	int TrackCount() { return tracks_read; }	// what the last load read, for the error box: Unload clears the TOC
+	void SaveState(cue_state_t *s);
+	void LoadState(const cue_state_t *s);
+	uint32_t DiscId();	// the TOC's tracks, summed: which disc this is
 	int CurrentLBA() { return lba; }
 
 private:

@@ -15,7 +15,14 @@ entity MSM5205 is
 		VCK_R		: out std_logic;
 		VCK_F		: out std_logic;
 		
-		SOUT		: out signed(15 downto 0)
+		SOUT		: out signed(15 downto 0);
+
+		-- A save state (docs/SAVESTATES.md): SS_HOLD stops it; its 35 bits out at SS_Q, and in
+		-- from SS_D at SS_WE.
+		SS_HOLD	: in std_logic := '0';
+		SS_Q		: out std_logic_vector(34 downto 0);
+		SS_D		: in std_logic_vector(34 downto 0) := (others => '0');
+		SS_WE		: in std_logic := '0'
 	);
 end MSM5205;
 
@@ -89,9 +96,13 @@ architecture rtl of MSM5205 is
 
 begin
 
+	SS_Q <= std_logic_vector(CLK_CNT) & SAMPLE_RCE & SAMPLE_FCE & std_logic_vector(DEC_DATA) & DEC_EXEC
+	        & std_logic_vector(SAMPLE) & std_logic_vector(STEP);
+
 	process( CLK )
 	begin
 		if rising_edge(CLK) then
+			if SS_HOLD = '0' then
 			SAMPLE_RCE <= '0';
 			SAMPLE_FCE <= '0';
 			if XTI = '1' then
@@ -103,6 +114,12 @@ begin
 					CLK_CNT <= (others => '0');
 					SAMPLE_FCE <= '1';
 				end if;
+			end if;
+			end if;
+			if SS_WE = '1' then
+				CLK_CNT <= unsigned(SS_D(34 downto 29));
+				SAMPLE_RCE <= SS_D(28);
+				SAMPLE_FCE <= SS_D(27);
 			end if;
 		end if;
 	end process;
@@ -121,6 +138,7 @@ begin
 			STEP <= (others => '0');
 			SAMPLE <= x"0000";
 		elsif rising_edge(CLK) then
+			if SS_HOLD = '0' then
 			DEC_EXEC <= '0';
 			if SAMPLE_FCE = '1' then
 				DEC_DATA <= unsigned(D);
@@ -156,6 +174,13 @@ begin
 				else
 					STEP <= NEXT_STEP(5 downto 0);
 				end if;
+			end if;
+			end if;
+			if SS_WE = '1' then
+				DEC_DATA <= unsigned(SS_D(26 downto 23));
+				DEC_EXEC <= SS_D(22);
+				SAMPLE <= unsigned(SS_D(21 downto 6));
+				STEP <= unsigned(SS_D(5 downto 0));
 			end if;
 		end if;
 	end process;

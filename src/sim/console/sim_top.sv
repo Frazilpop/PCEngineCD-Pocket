@@ -52,7 +52,26 @@ module sim_top (
 	output logic [23:0] video_rgb,
 
 	output logic [15:0] audio_l,
-	output logic [15:0] audio_r
+	output logic [15:0] audio_r,
+
+	// save states: main.sv's window to state_engine.sv
+	input  logic        ss_save,
+	input  logic        ss_load,
+	input  logic        ss_go,
+	output logic  [1:0] ss_status,
+	input  logic [20:0] ss_addr,
+	input  logic        ss_rd,
+	output logic [15:0] ss_do,
+	input  logic        ss_wr,
+	input  logic [15:0] ss_di,
+	output logic        drv_park,
+	output logic        drv_in,
+	input  logic        drv_parked,
+	input  logic        drv_restored,
+	// the chips' own sound, before the filters: {psg_sl, psg_sr, cdda_sl, cdda_sr, adpcm_s}
+	output logic [79:0] chip_snd,
+	// for SIM_SSDBG: the VDC's registers
+	output logic [511:0] dbg_vdc_regs
 );
 	wire [35:0] ext_bus;
 	assign ext_bus[31:16] = io_din;
@@ -160,9 +179,16 @@ module sim_top (
 		.audio_l(audio_l),
 		.audio_r(audio_r),
 
-		.EXT_BUS(ext_bus)
+		.EXT_BUS(ext_bus),
+
+		.SS_SAVE(ss_save), .SS_LOAD(ss_load), .SS_GO(ss_go), .SS_STATUS(ss_status),
+		.SS_ADDR(ss_addr), .SS_RD(ss_rd), .SS_DO(ss_do), .SS_WR(ss_wr), .SS_DI(ss_di),
+		.SS_CARD_SIZE(), .SS_CARD_SUM(), .SS_WORDS(),
+		.SS_DRV_PARK(drv_park), .SS_DRV_IN(drv_in), .SS_DRV_PARKED(drv_parked), .SS_DRV_RESTORED(drv_restored)
 	);
 
+	assign dbg_vdc_regs = pce.pce_top.chip.vdc0.regs;
+	assign chip_snd = {pce.psg_sl, pce.psg_sr, pce.cdda_sl, pce.cdda_sr, pce.adpcm_s};
 	assign mb128_state = pce.MB128.r_State;
 	assign mb128_req   = pce.MB128.r_Req;
 	assign mb128_addr  = pce.MB128.r_MB128_Addr;

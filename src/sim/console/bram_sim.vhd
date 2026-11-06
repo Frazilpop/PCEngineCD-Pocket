@@ -7,7 +7,8 @@
 --     (mif2hex in tools/sim.sh).
 --   the FIFOs: scfifo in show-ahead, q the oldest word with no read asked for,
 --     writes refused when full and reads when empty. The pointers wrap at
---     lpm_numwords, as CDSUBC_FIFO's 490 needs.
+--     lpm_numwords, as CDSUBC_FIFO's 490 needs. usedw is the count mod 2^widthu,
+--     0 when full, as scfifo's.
 
 library ieee;
 use ieee.std_logic_1164.all;
@@ -119,6 +120,7 @@ entity sim_fifo is
 		almost_full : out std_logic;
 		empty : out std_logic;
 		full  : out std_logic;
+		usedw : out std_logic_vector(abits-1 downto 0);
 		q     : out std_logic_vector(dbits-1 downto 0)
 	);
 end entity;
@@ -133,6 +135,7 @@ begin
 	empty <= '1' when count = 0 else '0';
 	full  <= '1' when count = words else '0';
 	almost_full <= '1' when count >= afull else '0';
+	usedw <= std_logic_vector(to_unsigned(count mod 2**abits, abits));
 	q <= mem(ra);
 	do_rd <= rdreq = '1' and count /= 0;
 	do_wr <= wrreq = '1' and count /= words;
@@ -172,6 +175,7 @@ entity CDDA_FIFO is
 		almost_full : out std_logic;
 		empty : out std_logic;
 		full  : out std_logic;
+		usedw : out std_logic_vector(9 downto 0);
 		q     : out std_logic_vector(31 downto 0)
 	);
 end entity;
@@ -179,7 +183,7 @@ end entity;
 architecture sim of CDDA_FIFO is
 begin
 	f : entity work.sim_fifo generic map (1024, 10, 32, 980)
-		port map (clock, sclr, data, wrreq, rdreq, almost_full, empty, full, q);
+		port map (clock, sclr, data, wrreq, rdreq, almost_full, empty, full, usedw, q);
 end architecture;
 
 library ieee;
@@ -195,6 +199,7 @@ entity SCSI_FIFO is
 		almost_full : out std_logic;
 		empty : out std_logic;
 		full  : out std_logic;
+		usedw : out std_logic_vector(11 downto 0);
 		q     : out std_logic_vector(7 downto 0)
 	);
 end entity;
@@ -203,7 +208,7 @@ architecture sim of SCSI_FIFO is
 begin
 	-- aclr is the chip's reset, held for many clocks, so a clear on the clock does
 	f : entity work.sim_fifo generic map (4096, 12, 8, 4000)
-		port map (clock, aclr, data, wrreq, rdreq, almost_full, empty, full, q);
+		port map (clock, aclr, data, wrreq, rdreq, almost_full, empty, full, usedw, q);
 end architecture;
 
 library ieee;
@@ -218,6 +223,7 @@ entity CDSUBC_FIFO is
 		wrreq : in std_logic;
 		empty : out std_logic;
 		full  : out std_logic;
+		usedw : out std_logic_vector(8 downto 0);
 		q     : out std_logic_vector(7 downto 0)
 	);
 end entity;
@@ -226,5 +232,5 @@ architecture sim of CDSUBC_FIFO is
 	signal unused : std_logic;
 begin
 	f : entity work.sim_fifo generic map (490, 9, 8, 490)
-		port map (clock, sclr, data, wrreq, rdreq, unused, empty, full, q);
+		port map (clock, sclr, data, wrreq, rdreq, unused, empty, full, usedw, q);
 end architecture;

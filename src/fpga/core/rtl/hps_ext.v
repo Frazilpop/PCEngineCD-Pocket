@@ -31,7 +31,15 @@ module hps_ext
 	output reg				cdctl_wr,
 	output reg 				cd_en,
 	input 					AUDIO_almost_full,
-	input 					CD_almost_full
+	input 					CD_almost_full,
+
+	// a save state (docs/SAVESTATES.md): held, the count of the chips' events stands still and
+	// the bus is ignored (a save's drive is parked; a load's may finish its pass); its 123 bits
+	// out at ss_q, in from ss_d at ss_we
+	input 					ss_hold,
+	output     [122:0] 	ss_q,
+	input      [122:0] 	ss_d,
+	input 					ss_we
  );
 
 assign EXT_BUS[15:0] = io_dout;
@@ -54,14 +62,18 @@ reg [15:0] io_dout;
 reg        dout_en = 0;
 reg [15:0] byte_cnt;
 
+reg  [7:0] cd_req = 0;
+reg        old_cd = 0; 
+assign ss_q = {cd_req, old_cd, cd_out, cd_en};
 always@(posedge clk_sys) begin
 	reg [15:0] cmd;
-	reg  [7:0] cd_req = 0;
-	reg        old_cd = 0; 
 	cdctl_wr 		<= 0;
-	old_cd 			<= cd_in[112];
 	dout_en			<= 0;
-	if(old_cd ^ cd_in[112]) cd_req <= cd_req + 1'd1;
+	if (~ss_hold) begin
+		old_cd <= cd_in[112];
+		if(old_cd ^ cd_in[112]) cd_req <= cd_req + 1'd1;
+	end
+	if (ss_we) {cd_req, old_cd, cd_out, cd_en} <= ss_d;
 
 	if(~io_enable) begin
 		dout_en <= 0;
@@ -71,7 +83,7 @@ always@(posedge clk_sys) begin
 		cd_dat_download <= 0;
 		if(cmd == CD_SET) cd_out[112] <= ~cd_out[112]; 
 	end
-	else if(io_strobe) begin
+	else if(io_strobe && !ss_hold) begin
 
 		io_dout <= 0;
 		if(~&byte_cnt) byte_cnt <= byte_cnt + 1'd1;

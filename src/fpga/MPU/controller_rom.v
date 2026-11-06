@@ -52,6 +52,11 @@ aft_master		= 0)
 	input 	     		 		bridge_rd,
 	output reg [31:0]  	 	bridge_rd_data,
 	input 	     		 		bridge_wr,
+	// a save state's read of the drive's block (core_top.v): a word of the RAM, its address
+	// at blk_rd, in blk_q two clocks later; the CPU's fetches wait those clocks
+	input 	     		 		blk_rd,
+	input 	[23:0]	 		blk_addr,
+	output reg [31:0]	 		blk_q,
 	input  [31:0]   	 		bridge_wr_data
 );
 
@@ -83,6 +88,12 @@ aft_master		= 0)
 				bridge_addr_reg <= bridge_addr;
 				bridge_wr_reg	<= 1;
 			end
+			else if (blk_rd && mem_status == 0) begin
+				iBus_cmd_ready <= 1'b0;
+				mem_status <= 2;
+				BRAM_CONTROLL <= 1;
+				bridge_addr_reg <= {8'd0, blk_addr};
+			end
 //			else if (bridge_rd && bridge_addr[31:16] == aft_address) begin
 //				iBus_cmd_ready <= 1'b0;
 //				mem_status <= 2;
@@ -102,6 +113,12 @@ aft_master		= 0)
 			
 			case (mem_status)
 				1 : begin
+					BRAM_CONTROLL	<= 0;
+					mem_status		<= 0;
+				end
+				2 : mem_status <= 3;		// the block's word on its way
+				3 : begin
+					blk_q <= ~little_enden ? {iBus_rsp_payload_inst[7:0], iBus_rsp_payload_inst[15:8], iBus_rsp_payload_inst[23:16], iBus_rsp_payload_inst[31:24]} : iBus_rsp_payload_inst;
 					BRAM_CONTROLL	<= 0;
 					mem_status		<= 0;
 				end

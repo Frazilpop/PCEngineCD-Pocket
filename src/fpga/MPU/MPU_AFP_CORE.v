@@ -41,6 +41,10 @@ module MPU_AFP_CORE
 	output reg [31:0]  	  	mpu_reg_bridge_rd_data,
 	input 	     		     	bridge_wr,
 	input  [31:0]   	     	bridge_wr_data,
+	// a save state's read of the drive's block in the MPU's RAM (controller_rom.v)
+	input 	     		     	blk_rd,
+	input  [23:0]   	     	blk_addr,
+	output [31:0]   	     	blk_q,
 		 
 
 	input 	     	        	dataslot_update,
@@ -210,7 +214,10 @@ Main_Bram(
 	.bridge_rd					(bridge_rd),
 	.bridge_rd_data			(mpu_ram_bridge_rd_data),
 	.bridge_wr					(bridge_wr),
-	.bridge_wr_data			(bridge_wr_data)
+	.bridge_wr_data			(bridge_wr_data),
+	.blk_rd						(blk_rd),
+	.blk_addr					(blk_addr),
+	.blk_q						(blk_q)
 );
 
 controller_rom 
@@ -236,7 +243,10 @@ Scratch_Ram(
 	.bridge_rd					(bridge_rd),
 	.bridge_rd_data			(mpu_scrachram_bridge_rd_data),
 	.bridge_wr					(bridge_wr),
-	.bridge_wr_data			(bridge_wr_data)
+	.bridge_wr_data			(bridge_wr_data),
+	.blk_rd						(1'b0),
+	.blk_addr					(24'd0),
+	.blk_q						()
 );
 
 

@@ -30,7 +30,13 @@ module ARCADE_CARD
 	output        SEL_N,
 	
 	output        RAM_CS_N,
-	output [20:0] RAM_A
+	output [20:0] RAM_A,
+
+	// a save state (docs/SAVESTATES.md): the registers as a chain of 304 bits, 16 a clock while
+	// SS_SHIFT. The card changes only when the CPU reaches it, so it needs no hold.
+	input         SS_SHIFT,
+	input  [15:0] SS_SI,
+	output [15:0] SS_SO
 );
 
 
@@ -108,6 +114,15 @@ always @(posedge CLK) begin
 	end
 end
 
+// the chain: each port's base, offset, increment and control, then the rest
+wire [303:0] ss_v = {3'd0, rotate_bits, shift_bits, shift_latch, ena,
+                     port[3].base, port[3].offset, port[3].increment, port[3].control,
+                     port[2].base, port[2].offset, port[2].increment, port[2].control,
+                     port[1].base, port[1].offset, port[1].increment, port[1].control,
+                     port[0].base, port[0].offset, port[0].increment, port[0].control};
+wire [303:0] ss_n = {ss_v[287:0], SS_SI};
+assign SS_SO = ss_v[303:288];
+
 wire [3:0] rot = DI[3] ? (4'd8 - DI[2:0]) : DI[2:0];
 wire acc = ~(WR_N & RD_N);
 
@@ -176,6 +191,13 @@ always @(posedge CLK) begin
 			if(port[p].control[4]) port[p].base <= port[p].base + port[p].increment;
 			else port[p].offset <= port[p].offset + port[p].increment;
 		end
+	end
+	if (SS_SHIFT) begin
+		{rotate_bits, shift_bits, shift_latch, ena,
+		 port[3].base, port[3].offset, port[3].increment, port[3].control,
+		 port[2].base, port[2].offset, port[2].increment, port[2].control,
+		 port[1].base, port[1].offset, port[1].increment, port[1].control,
+		 port[0].base, port[0].offset, port[0].increment, port[0].control} <= ss_n[300:0];
 	end
 end
 

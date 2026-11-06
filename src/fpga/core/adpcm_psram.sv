@@ -39,6 +39,15 @@ module adpcm_psram (
 	input  wire         rd,
 	output reg  [3:0]   dout = 0,
 
+	// a save state's port (state_engine.sv), while cd.vhd is held: a byte, the two nibbles
+	// of one word, the even nibble (the one cd.vhd writes first) in the byte's top four bits;
+	// a strobe starts it, and it's done in nine clocks
+	input  wire [15:0]  ss_a,
+	input  wire [7:0]   ss_d,
+	input  wire         ss_we,
+	input  wire         ss_rd,
+	output wire [7:0]   ss_q,
+
 	output reg  [21:16] cram_a = 0,
 	inout  wire [15:0]  cram_dq,
 	output wire         cram_clk,
@@ -85,6 +94,8 @@ reg  [15:0] clear_a = 0;
 // From the state, not a register of its own (mb128_psram.sv says what Quartus does with one).
 // S_RUN alone has bit 3 set.
 assign ready = s[3];
+
+assign ss_q = {op_q[3:0], op_q[11:8]};
 
 task start(input [1:0] what, input [16:0] addr, input [15:0] d);
 	op      <= what;
@@ -197,6 +208,8 @@ always @(posedge clk) begin
 		// cd.vhd's slots keep these apart: see the top of this file
 		if (we) nibble(OP_WRITE);
 		else if (rd) nibble(OP_READ);
+		else if (ss_we) start(OP_WRITE, {1'b0, ss_a}, {4'd0, ss_d[3:0], 4'd0, ss_d[7:4]});
+		else if (ss_rd) start(OP_READ, {1'b0, ss_a}, 16'd0);
 	end
 	default: s <= S_RUN;
 	endcase

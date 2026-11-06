@@ -50,6 +50,7 @@ ENTITY CDSUBC_FIFO IS
 		wrreq		: IN STD_LOGIC ;
 		empty		: OUT STD_LOGIC ;
 		full		: OUT STD_LOGIC ;
+		usedw		: OUT STD_LOGIC_VECTOR (8 DOWNTO 0);	-- for a save state's turning (docs/SAVESTATES.md)
 		q		: OUT STD_LOGIC_VECTOR (7 DOWNTO 0)
 	);
 END CDSUBC_FIFO;
@@ -84,6 +85,7 @@ ARCHITECTURE SYN OF cdsubc_fifo IS
 			wrreq	: IN STD_LOGIC ;
 			empty	: OUT STD_LOGIC ;
 			full	: OUT STD_LOGIC ;
+			usedw	: OUT STD_LOGIC_VECTOR (8 DOWNTO 0);
 			q	: OUT STD_LOGIC_VECTOR (7 DOWNTO 0)
 	);
 	END COMPONENT;
@@ -114,6 +116,7 @@ BEGIN
 		wrreq => wrreq,
 		empty => sub_wire0,
 		full => sub_wire1,
+		usedw => usedw,
 		q => sub_wire2
 	);
 

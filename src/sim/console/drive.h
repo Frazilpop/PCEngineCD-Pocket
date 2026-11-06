@@ -9,6 +9,9 @@ uint64_t sim_clocks();					// clocks since power-on
 long sim_frame();						// frames so far
 void sim_io_enable(bool on);			// the MPU's IO_UIO
 uint16_t sim_spi_word(uint16_t word);	// one word on the bus, waiting on IO_WAIT as the MPU does
+bool sim_drv_park();					// a save state: CORE_INPUT's park and state-in bits
+bool sim_drv_state_in();
+void sim_drv_parked(bool parked, bool restored);	// and CORE_OUTPUT's
 
 // drive.cpp's: the firmware's own drive on the Mac.
 void drive_open(const char *card, const char *cue, const char *out_dir);

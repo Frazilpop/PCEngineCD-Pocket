@@ -23,7 +23,14 @@ module MB128
 	output [19:0] ram_addr,
 	output reg    ram_din,
 	output reg    ram_we,
-	input         ram_dout
+	input         ram_dout,
+
+	// a save state (docs/SAVESTATES.md): ss_hold stops it; its 80 bits out at ss_q, in from
+	// ss_d at ss_we
+	input         ss_hold,
+	output [79:0] ss_q,
+	input  [79:0] ss_d,
+	input         ss_we
 );
 
 // constants - STATEs
@@ -61,8 +68,11 @@ reg        clk_prev;
 
 assign ram_addr = r_MB128_Addr;
 
-always @(posedge clk_sys) begin
+assign ss_q = {r_State, r_Register, r_Req, r_Bit_Count, r_MB128_Addr, r_MB128_Bits, r_Data, clk_prev, ram_din, ram_we};
 
+always @(posedge clk_sys) begin
+	if (ss_we) {r_State, r_Register, r_Req, r_Bit_Count, r_MB128_Addr, r_MB128_Bits, r_Data, clk_prev, ram_din, ram_we} <= ss_d;
+	else if (!ss_hold) begin
 	ram_we <= 0;
 	if (ram_we) r_MB128_Addr <= r_MB128_Addr + 1'b1;
 
@@ -181,6 +191,7 @@ always @(posedge clk_sys) begin
 				end
 			end
 		endcase
+	end
 	end
 end
 

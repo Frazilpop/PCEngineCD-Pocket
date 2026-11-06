@@ -117,12 +117,28 @@ unsigned int CheckTimer1(unsigned int time)
     return(time > (1UL << 31));
 }
 
+// A save state stops the drive's clock while the drive is parked (app/state.h): this is
+// how far the firmware's milliseconds are behind the counter's.
+static uint32_t timer2_offset = 0;
+
 uint32_t RISCGetTimer2(uint32_t fraction)
 {
   uint32_t res;
-  res = HW_TIMER2(REG_MILLISECONDS) + fraction;
+  res = HW_TIMER2(REG_MILLISECONDS) - timer2_offset + fraction;
   
   return(res);
+}
+
+void drive_clock_get(uint32_t *hi, uint32_t *lo)
+{
+  *hi = 0;
+  *lo = RISCGetTimer2(0);
+}
+
+void drive_clock_set(uint32_t hi, uint32_t lo)
+{
+  (void)hi;
+  timer2_offset = HW_TIMER2(REG_MILLISECONDS) - lo;
 }
 
 bool RISCCheckTimer2(uint32_t time)

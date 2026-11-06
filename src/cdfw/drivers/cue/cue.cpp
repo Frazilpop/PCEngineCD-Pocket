@@ -1150,3 +1150,57 @@ void cue_t::CommandError(uint8_t key, uint8_t asc, uint8_t ascq, uint8_t fru) {
 	sense.ascq = ascq;
 	sense.fru = fru;
 }
+
+// A save state (app/state.h). Its copy out and in is all this adds to what MiSTer's drive does.
+void cue_t::SaveState(cue_state_t *s)
+{
+	s->latency = latency; s->audiodelay = audiodelay;
+	s->state = state; s->isData = isData; s->CDDAMode = CDDAMode; s->region = region;
+	s->loaded = loaded; s->has_status = has_status;
+	s->data_req = data_req; s->can_read_next = can_read_next; s->tray_open = tray_open; s->disc_changed = disc_changed;
+	s->fast_seek = fast_seek; s->int_pend = int_pend; s->subq_pend = subq_pend;
+	s->index = index; s->current_track = current_track; s->lba = lba; s->cnt = cnt; s->scanOffset = scanOffset;
+	s->audioLength = audioLength; s->audioOffset = audioOffset;
+	s->CDDAStart = CDDAStart; s->CDDAEnd = CDDAEnd; s->CDDAFirst = CDDAFirst;
+	s->sense = sense; s->stat = stat; s->cue_slot = cue_slot;
+	memcpy(s->comm, comm, sizeof(s->comm));
+	s->chd_hunknum = chd_hunknum;
+	s->sub_first = sub_first; s->sub_count = sub_count; s->sub_last_lba = sub_last_lba;
+	memcpy(s->sub_tx, sub_tx + 4, 96);
+}
+
+void cue_t::LoadState(const cue_state_t *s)
+{
+	latency = s->latency; audiodelay = s->audiodelay;
+	state = s->state; isData = s->isData; CDDAMode = s->CDDAMode; region = s->region;
+	loaded = s->loaded; has_status = s->has_status;
+	data_req = s->data_req; can_read_next = s->can_read_next; tray_open = s->tray_open; disc_changed = s->disc_changed;
+	fast_seek = s->fast_seek; int_pend = s->int_pend; subq_pend = s->subq_pend;
+	index = s->index; current_track = s->current_track; lba = s->lba; cnt = s->cnt; scanOffset = s->scanOffset;
+	audioLength = s->audioLength; audioOffset = s->audioOffset;
+	CDDAStart = s->CDDAStart; CDDAEnd = s->CDDAEnd; CDDAFirst = s->CDDAFirst;
+	sense = s->sense; stat = s->stat; cue_slot = s->cue_slot;
+	memcpy(comm, s->comm, sizeof(comm));
+	chd_hunknum = s->chd_hunknum;
+	memcpy(sub_tx + 4, s->sub_tx, 96);
+	sub_last_lba = s->sub_last_lba;
+	sub_first = s->sub_first;
+	sub_count = 0;
+	if (sub_size && s->sub_count) {
+		// the subcode's cache as SubcodeFromFile left it
+		while (!dataslot_ready());
+		if (!dataslot_read(SUB_SLOT, APF_SCRACH_ADDRESS_OFFSET + SUB_CACHE_AT, sub_first * 96, s->sub_count * 96))
+			sub_count = s->sub_count;
+	}
+}
+
+uint32_t cue_t::DiscId()
+{
+	uint32_t h = 2166136261u;
+	auto mix = [&](uint32_t v) { for (int i = 0; i < 4; i++) { h ^= (v >> (8 * i)) & 0xFF; h *= 16777619u; } };
+	mix(toc.last); mix(toc.end);
+	for (int i = 0; i <= toc.last && i < 100; i++) {
+		mix(toc.tracks[i].start); mix(toc.tracks[i].end); mix(toc.tracks[i].type); mix(toc.tracks[i].sector_size);
+	}
+	return h;
+}

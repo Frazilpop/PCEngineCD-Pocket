@@ -151,7 +151,26 @@ module pce (
     output wire [15:0] audio_r,
 	 
 	 // CDROM Access
-	 inout  			[35:0] EXT_BUS
+	 inout  			[35:0] EXT_BUS,
+
+    // Save states (state_engine.sv): the window state_bridge.sv drives
+    input  wire        SS_SAVE,
+    input  wire        SS_LOAD,
+    input  wire        SS_GO,
+    output wire  [1:0] SS_STATUS,
+    input  wire [20:0] SS_ADDR,
+    input  wire        SS_RD,
+    output wire [15:0] SS_DO,
+    input  wire        SS_WR,
+    input  wire [15:0] SS_DI,
+    // and the drive's part (the MPU's CORE_INPUT and CORE_OUTPUT bits)
+    output wire [31:0] SS_CARD_SIZE,
+    output wire [31:0] SS_CARD_SUM,
+    output wire [20:0] SS_WORDS,
+    output wire        SS_DRV_PARK,
+    output wire        SS_DRV_IN,
+    input  wire        SS_DRV_PARKED,
+    input  wire        SS_DRV_RESTORED
 );
 
   wire                                       [63:0] status = 0;
@@ -169,9 +188,43 @@ module pce (
   wire VDC_BG_EN = 1;
   wire VDC_SPR_EN = 1;
   wire [ 1:0] VDC_GRID_EN = 2'd0;
-  wire CPU_PAUSE_EN = 0;
+  wire CPU_PAUSE_EN;
 
-  wire reset = (core_reset | save_download);
+  // a save or a load under way holds every reset off the console: the engine's own is power-up's
+  wire ss_keep;
+  wire reset = (core_reset | save_download) & ~ss_keep;
+
+  // the save states' signals (state_engine.sv, below)
+  wire        ss_hold, ss_rst, ss_shift, ss_sync, ss_parked, ss_busy, ss_mem, ss_mwe, ss_refetch;
+  wire        ss_snap, ss_rest, ss_win;
+  wire  [3:0] ss_chain, ss_msel;
+  wire [15:0] ss_si, ss_so, ss_md, ss_mq;
+  wire [14:0] ss_ma;
+  wire  [9:0] ss_vpos;
+  wire [11:0] ss_hpos;
+  wire        ss_blank, ss_freeze_ok;
+  wire  [1:0] ss_fsel;
+  wire        ss_frd, ss_fwr, ss_fclr;
+  wire [31:0] ss_fd, ss_fq;
+  wire [12:0] ss_fcnt;
+  wire [15:0] ss_ad_a;
+  wire  [7:0] ss_ad_d, ss_ad_q;
+  wire        ss_ad_we, ss_ad_rd;
+  wire        ss_sd, ss_sd_ref, ss_sd_we, ss_sd_rd;
+  wire [21:0] ss_sd_a;
+  wire  [7:0] ss_sd_d;
+  wire        ss_bk, ss_bk_we;
+  wire        ss_mb, ss_mb_we, ss_mb_rd;
+  wire [15:0] ss_mb_a, ss_mb_d;
+  wire  [9:0] ss_bk_a;
+  wire [15:0] ss_bk_d;
+  wire        ss_link_we, ss_rest_we;			// main.sv's own chains, assigned below
+  wire [319:0] ss_link_v, ss_link_n;
+  wire  [95:0] ss_rest_v, ss_rest_n;
+  wire [122:0] hps_ss_q;
+  wire  [79:0] mb128_ss_q;
+  wire  [15:0] ss_so_main;
+
   
   
 	wire [14:0] PRAM_addr, 	RAM_addr;
@@ -304,7 +357,140 @@ module pce (
 		
 		.CD_almost_full		(CD_almost_full),
 		.AUDIO_almost_full	(AUDIO_almost_full),
-		.BORDER_OUT				(border)
+		.BORDER_OUT				(border),
+
+		.SS_HOLD					(ss_hold),
+		.SS_RST					(ss_rst),
+		.SS_CHAIN				(ss_chain),
+		.SS_SHIFT				(ss_shift),
+		.SS_SI					(ss_si),
+		.SS_SO					(ss_so),
+		.SS_SNAP					(ss_snap),
+		.SS_REST					(ss_rest),
+		.SS_SYNC					(ss_sync),
+		.SS_PARKED				(ss_parked),
+		.SS_WIN					(ss_win),
+		.SS_BUSY					(ss_busy),
+		.SS_VPOS					(ss_vpos),
+		.SS_HPOS					(ss_hpos),
+		.SS_MEM					(ss_mem),
+		.SS_MSEL					(ss_msel),
+		.SS_MA					(ss_ma),
+		.SS_MWE					(ss_mwe),
+		.SS_MD					(ss_md),
+		.SS_MQ					(ss_mq),
+		.SS_FREEZE_OK			(ss_freeze_ok),
+		.SS_FSEL					(ss_fsel),
+		.SS_FRD					(ss_frd),
+		.SS_FWR					(ss_fwr),
+		.SS_FCLR					(ss_fclr),
+		.SS_FD					(ss_fd),
+		.SS_FQ					(ss_fq),
+		.SS_FCNT					(ss_fcnt)
+  );
+
+  ////////////////////////////  SAVE STATES  ///////////////////////////////////
+
+
+  state_engine state_engine (
+      .clk(clk_sys_42_95),
+      .locked(pll_core_locked),
+
+      .SS_SAVE(SS_SAVE),
+      .SS_LOAD(SS_LOAD),
+      .SS_GO(SS_GO),
+      .SS_STATUS(SS_STATUS),
+      .SS_ADDR(SS_ADDR),
+      .SS_RD(SS_RD),
+      .SS_DO(SS_DO),
+      .SS_WR(SS_WR),
+      .SS_DI(SS_DI),
+
+      .vpos(ss_vpos),
+      .hpos(ss_hpos),
+      .vbl(vbl),
+      .window(ss_win),
+
+      .cpu_pause(CPU_PAUSE_EN),
+      .cpu_rst(ss_rst),
+      .cpu_sync(ss_sync),
+      .cpu_parked(ss_parked),
+      .rom_rdy(rom_sdrdy),
+      .refetch(ss_refetch),
+      .cpu_fast(1'b0),
+
+      .hold(ss_hold),
+      .snap(ss_snap),
+      .rest(ss_rest),
+      .keep(ss_keep),
+      .blank(ss_blank),
+      .busy(ss_busy),
+      .freeze_ok(ss_freeze_ok),
+
+      .drv_park(SS_DRV_PARK),
+      .drv_in(SS_DRV_IN),
+      .drv_parked(SS_DRV_PARKED),
+      .drv_restored(SS_DRV_RESTORED),
+
+      .chain(ss_chain),
+      .shift(ss_shift),
+      .si(ss_si),
+      .so(ss_so_main),
+
+      .mem(ss_mem),
+      .msel(ss_msel),
+      .ma(ss_ma),
+      .mwe(ss_mwe),
+      .md(ss_md),
+      .mq(ss_mq),
+
+      .fsel(ss_fsel),
+      .frd(ss_frd),
+      .fwr(ss_fwr),
+      .fclr(ss_fclr),
+      .fd(ss_fd),
+      .fq(ss_fq),
+      .fcount(ss_fcnt),
+
+      .ad_a(ss_ad_a),
+      .ad_d(ss_ad_d),
+      .ad_we(ss_ad_we),
+      .ad_rd(ss_ad_rd),
+      .ad_q(ss_ad_q),
+
+      .sd(ss_sd),
+      .sd_a(ss_sd_a),
+      .sd_d(ss_sd_d),
+      .sd_ref(ss_sd_ref),
+      .sd_we(ss_sd_we),
+      .sd_rd(ss_sd_rd),
+      .sd_q(rom_sdata),
+
+      .mb(ss_mb),
+      .mb_a(ss_mb_a),
+      .mb_d(ss_mb_d),
+      .mb_we(ss_mb_we),
+      .mb_rd(ss_mb_rd),
+      .mb_q(mb128_dout),
+
+      .mb128_on(mb128_ena),
+      .ac_on(AC_EN),
+      .ac_write(~cart_download & cd_ram_wr & ce_rom),
+      .ac_write_a(cd_ram_a),
+
+      .bk(ss_bk),
+      .bk_a(ss_bk_a),
+      .bk_d(ss_bk_d),
+      .bk_we(ss_bk_we),
+      .bk_q(bk_int_dout),
+
+      .cart_download(cart_download),
+      .ioctl_wr(ioctl_wr),
+      .ioctl_dout(ioctl_dout),
+
+      .hdr_card_size(SS_CARD_SIZE),
+      .hdr_card_sum(SS_CARD_SUM),
+      .size_words(SS_WORDS)
   );
   
 
@@ -327,14 +513,21 @@ module pce (
 		.cd_data_out(cd_data_out),
 		.cd_en(cd_en),
 		.AUDIO_almost_full(AUDIO_almost_full),
-		.CD_almost_full(CD_almost_full)
+		.CD_almost_full(CD_almost_full),
+		.ss_hold(ss_hold),
+		.ss_q(hps_ss_q),
+		.ss_d(ss_link_n[307:185]),
+		.ss_we(ss_link_we)
    );
 
    reg        cd_dat_req;
+   reg cd_out112_last = 1;
+   reg cd_comm_send_old = 0, cd_dataout_send_old = 0, cd_dat_req_old = 0, cd_reset_req_old = 0;
+   // held for a save state: the chips' signals move as their chains do, and the drive is parked
    always @(posedge clk_sys_42_95) begin
-   	reg cd_out112_last = 1;
-   	reg cd_comm_send_old = 0, cd_dataout_send_old = 0, cd_dat_req_old = 0, cd_reset_req_old = 0;
-
+   	if (ss_link_we) {cd_in, cd_stat, cd_stat_rec, cd_dataout_req, cd_region, cd_out112_last, cd_comm_send_old,
+   	                 cd_dataout_send_old, cd_dat_req_old, cd_reset_req_old} <= ss_link_n[136:0];
+   	else if (!ss_hold) begin
    	cd_stat_rec <= 0;
    	cd_dataout_req <= 0;
    	if (reset) begin
@@ -373,6 +566,7 @@ module pce (
    			cd_in[112] <= ~cd_in[112];
    		end
    	end
+   	end
    end
 
   reg [15:0] cd_dat = 0;
@@ -381,24 +575,26 @@ module pce (
   reg        cd_dm = 0;
   reg 		 cd_sub = 0;
   reg 		 cd_cdg;
+  reg cdd_old_download;
+  reg cd_head_pos, cd_dat_write;
+  reg [11:0] cd_dat_len, cd_dat_cnt;
    always @(posedge clk_sys_42_95) begin
-   	reg old_download;
-   	reg head_pos, cd_dat_write;
-   	reg [11:0] cd_dat_len, cd_dat_cnt;
-
-   	old_download <= cd_dat_download;
-   	if ((~old_download && cd_dat_download) || reset) begin
-   		head_pos <= 0;
+   	if (ss_link_we) {cdd_old_download, cd_head_pos, cd_dat_write, cd_dat_len, cd_dat_cnt, cd_dat, cd_wr, cd_dat_byte,
+   	                 cd_dm, cd_sub, cd_cdg} <= ss_link_n[184:137];
+   	else if (!ss_hold) begin
+   	cdd_old_download <= cd_dat_download;
+   	if ((~cdd_old_download && cd_dat_download) || reset) begin
+   		cd_head_pos <= 0;
    		cd_dat_len <= 0;
    		cd_dat_cnt <= 0;
    	end
    	else if (cdctl_wr && cd_dat_download) begin
-   		if (!head_pos) begin
+   		if (!cd_head_pos) begin
    			cd_dat_len <= cd_data_out[11:0];
    			cd_dm <= cd_data_out[15];
 				cd_cdg <= cd_data_out[14];
    			cd_dat_cnt <= 0;
-   			head_pos <= 1;
+   			cd_head_pos <= 1;
    		end
    		else if (cd_dat_cnt < cd_dat_len) begin
    			cd_dat_write <= 1;
@@ -423,7 +619,9 @@ module pce (
    			end
    		end
    	end
+   	end
    end
+
 
   ////////////////////////////  VIDEO  ///////////////////////////////////
 
@@ -510,16 +708,18 @@ module pce (
   sdram sdram (
       .init(~pll_core_locked),
       .clk(clk_mem_85_91),
-      .clkref(ce_rom),
+      // a save state's engine has a clkref of its own for its reads and writes of the CD RAM,
+      // and its let-go reads the CPU's fetch again (state_engine.sv)
+      .clkref(ce_rom | ss_refetch | ss_sd_ref),
 
-      .waddr(cart_download ? romwr_a : {3'b001, cd_ram_a}),
-      .din(cart_download ? romwr_d : {cd_ram_do, cd_ram_do}),
-      .we(~cart_download & cd_ram_wr & ce_rom),
+      .waddr(cart_download ? romwr_a : {3'b001, ss_sd ? ss_sd_a : cd_ram_a}),
+      .din(cart_download ? romwr_d : ss_sd ? {ss_sd_d, ss_sd_d} : {cd_ram_do, cd_ram_do}),
+      .we(~cart_download & ((cd_ram_wr & ce_rom) | ss_sd_we)),
       .we_req(rom_wr),
       // .we_ack(sd_wrack),
 
-      .raddr(rom_rd ? {3'b000, (rom_rdaddr + (romwr_a[9] ? 22'h200 : 22'h0))} : {3'b001, cd_ram_a}),
-      .rd((rom_rd | cd_ram_rd) & ce_rom),
+      .raddr(ss_sd ? {3'b001, ss_sd_a} : rom_rd ? {3'b000, (rom_rdaddr + (romwr_a[9] ? 22'h200 : 22'h0))} : {3'b001, cd_ram_a}),
+      .rd(((rom_rd | cd_ram_rd) & (ce_rom | ss_refetch)) | ss_sd_rd),
       .rd_rdy(rom_sdrdy),
       .dout(rom_sdata),
 
@@ -702,13 +902,16 @@ end
   reg [7:0] ms_x, ms_y;
   reg [3:0] turbo_counter = 0;
 
+  reg [ 1:0] last_gp;
+  reg        high_buttons = 0;
+  // held for a save state: the pads' select moves as the CPU's chain does
   always @(posedge clk_sys_42_95) begin : input_block
-    reg [ 1:0] last_gp;
-    reg        high_buttons = 0;
     reg [14:0] mouse_to;
     reg        ms_stb;
     reg [7:0] msr_x, msr_y;
 
+    if (ss_rest_we) {joy_latch, last_gp, high_buttons, turbo_counter, joy_port} <= ss_rest_n[13:0];
+    else if (!ss_hold) begin
     if (reset) high_buttons <= 0;
 
     joy_latch <= joy_data[{high_buttons, joy_out[0], 2'b00}+:4];
@@ -750,10 +953,32 @@ end
 	else if (joy_out[0] && ~last_gp[0] && (turbo_tap_enable | status[27]) && (status[27:26] != 2'b11)) begin	// suppress if XE-1AP
       joy_port <= joy_port + 3'd1;
     end
+    end
   end
 
   wire [1:0] joy_out;
   wire [3:0] joy_in = (mb128_ena & mb128_Active) ? mb128_Data : joy_latch;
+
+  // The save state's chains of main.sv's own (state_engine.sv's 6 and 7), 16 bits a clock:
+  // the link to the MPU (the two blocks above and hps_ext.v's), and the pads and the MB128.
+  assign       ss_link_we = ss_shift && ss_chain == 4'd6;
+  assign       ss_rest_we = ss_shift && ss_chain == 4'd7;
+  reg   [11:0] ss_link_pad;
+  reg    [1:0] ss_rest_pad;
+  assign       ss_link_v = {ss_link_pad, hps_ss_q,
+                            cdd_old_download, cd_head_pos, cd_dat_write, cd_dat_len, cd_dat_cnt, cd_dat, cd_wr, cd_dat_byte,
+                            cd_dm, cd_sub, cd_cdg,
+                            cd_in, cd_stat, cd_stat_rec, cd_dataout_req, cd_region, cd_out112_last, cd_comm_send_old,
+                            cd_dataout_send_old, cd_dat_req_old, cd_reset_req_old};
+  assign       ss_link_n = {ss_link_v[303:0], ss_si};
+  assign       ss_rest_v = {ss_rest_pad, mb128_ss_q, joy_latch, last_gp, high_buttons, turbo_counter, joy_port};
+  assign       ss_rest_n = {ss_rest_v[79:0], ss_si};
+  always @(posedge clk_sys_42_95) begin
+    if (ss_link_we) ss_link_pad <= ss_link_n[319:308];
+    if (ss_rest_we) ss_rest_pad <= ss_rest_n[95:94];
+  end
+  assign       ss_so_main = ss_chain == 4'd6 ? ss_link_v[319:304] : ss_chain == 4'd7 ? ss_rest_v[95:80] : ss_so;
+
 
   /////////////////////////  BACKUP RAM SAVE/LOAD  /////////////////////////////
 
@@ -777,7 +1002,12 @@ end
       .ram_addr(mb128_ram_addr),
       .ram_din(mb128_ram_din),
       .ram_we(mb128_ram_we),
-      .ram_dout(mb128_ram_dout)
+      .ram_dout(mb128_ram_dout),
+
+      .ss_hold(ss_hold),
+      .ss_q(mb128_ss_q),
+      .ss_d(ss_rest_n[93:14]),
+      .ss_we(ss_rest_we)
   );
 
   wire mb128_ready, mb128_mem_ok, adpcm_ready, adpcm_mem_ok;
@@ -792,14 +1022,15 @@ end
 
       .mb_addr(mb128_ram_addr),
       .mb_din(mb128_ram_din),
-      .mb_we(mb128_ram_we),
+      .mb_we(mb128_ram_we & ~ss_hold),		// (held, the MB128's chain moves through it)
       .mb_dout(mb128_ram_dout),
 
-      .bk_addr({sd_lba[7:0] - 8'd4, sd_buff_addr}),
-      .bk_din(sd_buff_dout),
+      // the save slot's port, and a word at a time a save state's (state_engine.sv)
+      .bk_addr(ss_mb ? ss_mb_a : {sd_lba[7:0] - 8'd4, sd_buff_addr}),
+      .bk_din(ss_mb ? ss_mb_d : sd_buff_dout),
       .bk_dout(mb128_dout),
-      .bk_we(~bk_int & sd_wr),
-      .bk_rd(~bk_int & sd_rd),
+      .bk_we(ss_mb ? ss_mb_we : ~bk_int & sd_wr),
+      .bk_rd(ss_mb ? ss_mb_rd : ~bk_int & sd_rd),
 
       .cram_a(cram0_a),
       .cram_dq(cram0_dq),
@@ -821,11 +1052,17 @@ end
       .ready(adpcm_ready),
       .mem_ok(adpcm_mem_ok),
 
+      // cd.vhd's port shut while a save state's engine has its own (state_engine.sv)
       .a(adram_a),
       .din(adram_di),
-      .we(adram_we),
-      .rd(adram_rd),
+      .we(adram_we & ~ss_mem),
+      .rd(adram_rd & ~ss_mem),
       .dout(adram_do),
+      .ss_a(ss_ad_a),
+      .ss_d(ss_ad_d),
+      .ss_we(ss_ad_we),
+      .ss_rd(ss_ad_rd),
+      .ss_q(ss_ad_q),
 
       .cram_a(cram1_a),
       .cram_dq(cram1_dq),
@@ -866,10 +1103,11 @@ end
       .wren_a(bram_wr),
       .q_a(bram_q),
 
+      // port B: the save slot's, the format at power-up's, and a word at a time a save state's
       .clock1(clk_sys_42_95),
-      .address_b(bram_init_counter[3] ? {sd_lba[1:0], sd_buff_addr} : bram_init_counter[2:1]),
-      .data_b(bram_init_counter[3] ? sd_buff_dout : defval[bram_init_counter[2:1]]),
-      .wren_b(bram_init_counter[3] ? bk_int & sd_wr : 1'b1),
+      .address_b(ss_bk ? ss_bk_a : bram_init_counter[3] ? {sd_lba[1:0], sd_buff_addr} : bram_init_counter[2:1]),
+      .data_b(ss_bk ? ss_bk_d : bram_init_counter[3] ? sd_buff_dout : defval[bram_init_counter[2:1]]),
+      .wren_b(ss_bk ? ss_bk_we : bram_init_counter[3] ? bk_int & sd_wr : 1'b1),
 
       .q_b(bk_int_dout)
   );

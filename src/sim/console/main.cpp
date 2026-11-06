@@ -6,6 +6,18 @@
 //   Vsim_top --card FILE [--disc CUE] [--out DIR] [--frames N] [--every K] [--save 100,200]
 //            [--press F:buttons[:N] ...] [--arcade] [--change F:CUE ...] [--reset F ...]
 //            [--mb128] [--save-in FILE] [--save-out FILE] [--press-file FILE]
+//            [--state-save F FILE] [--state-load FILE [--load-at F] [--resave FILE]]
+//
+// Save states (docs/SAVESTATES.md, The proofs), through main.sv's window to
+// state_engine.sv, as state_bridge.sv drives it:
+//   --state-save F FILE   at frame F find the clean point, read the state out into
+//                         FILE, and let the console go on
+//   --state-load FILE     at frame --load-at (30) write FILE in and let it go
+//   --resave FILE         with --state-load: before the load lets go, read the state
+//                         straight back out into FILE
+// From the clock the console is let go, after.txt has each whole frame: its number
+// from the let-go, its picture's CRC and a CRC of the chips' own sound (the PSG's,
+// CD audio's and ADPCM's outputs before the filters) on every clock of it.
 //
 // Out, in DIR: f_NNNNN.png for each frame saved (the picture as core_top.v gives it to
 // the Pocket, through the real line buffer), frames.txt (each frame's number, size, a
@@ -21,6 +33,7 @@
 #include "Vsim_top.h"
 #include "verilated.h"
 #include "drive.h"
+extern uint8_t sim_drive_block[2048];	// drive.cpp's: the firmware's block for a save state
 #include "save_size.h"
 #include "core_settings.h"
 
@@ -44,6 +57,23 @@ static std::string save_in, save_out;		// the Save slot: loaded before the card,
 static uint32_t save_loaded;
 static bool mb128_on;
 static int mb128_state;
+
+// ---- save states: the harness's side of the state window ----
+static const int SS_CLOCKS = 24;		// the Pocket's bridge's pace (state_engine.sv)
+static uint32_t SS_WORDS = 0x38000;		// 448 KB at the least; the header says (state_engine.sv)
+static long st_save_at = -1, st_load_at = 30;
+static std::string st_save, st_load, st_resave, st_out;
+static enum { H_IDLE, H_SEEK, H_READ, H_WAITGO, H_LWRITE, H_LGO, H_DONE } hs = H_IDLE;
+static std::vector<uint16_t> st_words;
+static std::vector<uint8_t> st_loaded;
+static uint32_t hw;
+static int hwait;
+static bool resaving, released;
+static uint64_t t_cmd;
+static FILE *fa;				// after.txt
+static long rel_frame;
+static uint32_t snd_crc;
+static std::vector<uint8_t> card_bytes;
 
 void sim_tick(uint32_t n);
 
@@ -212,6 +242,16 @@ static void frame_done() {
   uint32_t hash = crc32(0, (const Bytef *)frame.data(), frame.size() * 4);
   fprintf(frames_txt, "%ld %dx%d %08x %06x\n", nframe, w, h, hash, frame.empty() ? 0 : frame[0]);
   fflush(frames_txt);
+  if (getenv("SIM_SSDBG")) {
+    auto reg = [&](int i) { int b = (31 - i) * 16; return (top->dbg_vdc_regs[b / 32] >> (b % 32)) & 0xFFFF; };
+    printf("vdc: VPR %04x VDR %04x VCR %04x DVSSR %04x CR %04x\n", reg(12), reg(13), reg(14), reg(19), reg(5));
+  }
+  // after a let-go, the frames from the first whole one: the one it fell in is part before
+  if (fa) {
+    if (rel_frame >= 0) { fprintf(fa, "%ld %dx%d %08x %08x\n", rel_frame, w, h, hash, snd_crc); fflush(fa); }
+    rel_frame++;
+    snd_crc = 0;
+  }
   bool save = (every > 0 && nframe % every == 0) || nframe == frames
               || saves.find("," + std::to_string(nframe) + ",") != std::string::npos;
   if (save && w && h) {
@@ -232,10 +272,103 @@ static void frame_done() {
   if (nframe >= frames) finish();
 }
 
+static void ss_report(const char *what) {
+  printf("state: %s at clock %llu, frame %ld (status %d)\n", what, (unsigned long long)clocks, nframe, top->ss_status);
+  fflush(stdout);
+}
+static void ss_let_go() {
+  ss_report("let go");
+  released = true;
+  if (fa) fclose(fa);
+  fa = fopen((out_dir + "/after.txt").c_str(), "w");
+  rel_frame = -1;
+  snd_crc = 0;
+}
+static bool ss_write_file() {
+  FILE *f = fopen(st_out.c_str(), "wb");
+  if (!f) { fprintf(stderr, "cannot write %s\n", st_out.c_str()); return false; }
+  for (uint16_t w : st_words) { fputc(w >> 8, f); fputc(w & 0xFF, f); }
+  fclose(f);
+  return true;
+}
+
+// The state window, a clock at a time, as state_bridge.sv drives it: called after each
+// rising edge, what it sets is taken at the next.
+static void ss_step() {
+  top->ss_save = 0; top->ss_load = 0; top->ss_go = 0; top->ss_rd = 0; top->ss_wr = 0;
+  if (top->ss_status == 3 && hs != H_DONE && hs != H_IDLE) { ss_report("an error"); hs = H_DONE; }
+  switch (hs) {
+  case H_IDLE:
+    if (st_save_at >= 0 && nframe == st_save_at && st_out.empty()) {
+      top->ss_save = 1; st_out = st_save; hs = H_SEEK; hwait = 4; t_cmd = clocks; ss_report("save asked");
+    } else if (!st_loaded.empty() && nframe == st_load_at) {
+      top->ss_load = 1; hs = H_LWRITE; hw = 0; hwait = 40; ss_report("load begun");
+    }
+    break;
+  case H_SEEK:
+    if (hwait) { hwait--; break; }
+    if (top->ss_status == 2) {
+      ss_report(resaving ? "restored state readable" : "frozen at its point");
+      printf("state: %.2f ms to the point\n", (clocks - t_cmd) / (double)CLK_HZ * 1000);
+      st_words.assign(0x48000, 0);
+      hs = H_READ; hw = 0; hwait = 0;
+    }
+    break;
+  case H_READ:
+    if (hwait == 0) { top->ss_addr = hw; top->ss_rd = 1; hwait = SS_CLOCKS + 1; break; }
+    if (--hwait == 1) {
+      // the drive's block is the bridge's to serve, from the MPU's RAM
+      if (hw >= 0x400 && hw < 0x800) st_words[hw] = sim_drive_block[2 * (hw - 0x400)] << 8 | sim_drive_block[2 * (hw - 0x400) + 1];
+      else st_words[hw] = top->ss_do;
+      if (hw == 5) {
+        // the header's size, in bytes: the MB128's and the Arcade Card's room as the file has them
+        SS_WORDS = (st_words[4] << 16 | st_words[5]) / 2;
+        st_words.resize(SS_WORDS, 0);
+      }
+      if (++hw == SS_WORDS) {
+        if (!ss_write_file()) exit(1);
+        ss_report("read out");
+        printf("state: written %s\n", st_out.c_str());
+        hs = H_WAITGO; hwait = 2;
+      }
+    }
+    break;
+  case H_WAITGO:
+    if (hwait == 2) { top->ss_go = 1; hwait = 1; break; }
+    if (top->ss_status == 0) { ss_let_go(); hs = H_DONE; }
+    break;
+  case H_LWRITE:
+    if (hwait) { hwait--; break; }
+    if (hw == SS_WORDS) { top->ss_go = 1; ss_report("written in"); hs = H_LGO; hwait = 16; break; }
+    top->ss_addr = hw; top->ss_di = st_loaded[2 * hw] << 8 | st_loaded[2 * hw + 1]; top->ss_wr = 1;
+    if (hw >= 0x400 && hw < 0x800) { sim_drive_block[2 * (hw - 0x400)] = st_loaded[2 * hw]; sim_drive_block[2 * (hw - 0x400) + 1] = st_loaded[2 * hw + 1]; }
+    hw++; hwait = SS_CLOCKS;
+    break;
+  case H_LGO:
+    if (hwait) { hwait--; break; }
+    if (!st_resave.empty() && !resaving && top->ss_status == 2) {
+      ss_report("restored"); resaving = true; top->ss_save = 1; st_out = st_resave; hs = H_SEEK; hwait = 8; t_cmd = clocks;
+      break;
+    }
+    if (top->ss_status == 0) { ss_let_go(); hs = H_DONE; }
+    break;
+  default: break;
+  }
+  // after a resave's read-out, H_WAITGO's go ends the load as well
+}
+
 void sim_tick(uint32_t n) {
   for (uint32_t i = 0; i < n; i++) {
     top->clk_sys = 1; top->clk_mem = 1; top->eval();
     clocks++;
+    if (running) ss_step();
+    if (fa) {
+      uint8_t snd[10];
+      uint64_t lo = top->chip_snd[0] | (uint64_t)top->chip_snd[1] << 32;
+      for (int k = 0; k < 8; k++) snd[k] = lo >> (8 * k);
+      snd[8] = top->chip_snd[2]; snd[9] = top->chip_snd[2] >> 8;
+      snd_crc = crc32(snd_crc, snd, 10);
+    }
 
     // what a game asks of the MB128: rtl/mb128.sv's states 1, the ident, and 6 and 8, a read and a write
     if (top->mb128_state != mb128_state) {
@@ -267,6 +400,11 @@ void sim_tick(uint32_t n) {
 }
 
 uint64_t sim_clocks() { return clocks; }
+
+// a save state's drive: CORE_INPUT and CORE_OUTPUT's bits, as core_top.v joins them
+bool sim_drv_park() { return top->drv_park; }
+bool sim_drv_state_in() { return top->drv_in; }
+void sim_drv_parked(bool parked, bool restored) { top->drv_parked = parked; top->drv_restored = restored; }
 long sim_frame() { return nframe; }
 
 // About what a word costs the MPU on the Pocket: a gpo read and two writes at 74 MHz,
@@ -334,6 +472,10 @@ int main(int argc, char **argv) {
       changes.push_back({atol(p.c_str()), p.substr(c + 1)});
     }
     else if (a == "--reset") resets.push_back(atol(next().c_str()));
+    else if (a == "--state-save") { st_save_at = atol(next().c_str()); st_save = next(); }
+    else if (a == "--state-load") st_load = next();
+    else if (a == "--load-at") st_load_at = atol(next().c_str());
+    else if (a == "--resave") st_resave = next();
     else { fprintf(stderr, "what is %s?\n", a.c_str()); return 2; }
   }
   if (card_path.empty()) { fprintf(stderr, "--card FILE: a system card, or tools/testcard.py's\n"); return 2; }
@@ -376,6 +518,24 @@ int main(int argc, char **argv) {
   }
   top->cart_download = 0;
   sim_tick(200);
+  card_bytes = rom;
+  if (!st_load.empty()) {
+    // the header, as state_bridge.sv checks it: the magic, the version, this system card
+    FILE *fs = fopen(st_load.c_str(), "rb");
+    if (!fs) { fprintf(stderr, "cannot open %s\n", st_load.c_str()); return 1; }
+    { int c; while ((c = fgetc(fs)) != EOF) st_loaded.push_back(c); }
+    fclose(fs);
+    if (st_loaded.size() < 0x70000 || st_loaded.size() != ((uint32_t)st_loaded[8] << 24 | st_loaded[9] << 16 | st_loaded[10] << 8 | st_loaded[11])) {
+      fprintf(stderr, "%s is not a whole state\n", st_load.c_str()); return 1;
+    }
+    SS_WORDS = st_loaded.size() / 2;
+    uint32_t size = 0, sum = 0;
+    for (size_t i = 0; i + 1 < rom.size(); i += 2) { size += 2; sum += rom[i] << 8 | rom[i + 1]; }
+    auto be32 = [&](int o) { return (uint32_t)st_loaded[o] << 24 | st_loaded[o + 1] << 16 | st_loaded[o + 2] << 8 | st_loaded[o + 3]; };
+    if (memcmp(st_loaded.data(), "PCSS", 4) || st_loaded[4] || st_loaded[5] != 1 || be32(0x0C) != size || be32(0x10) != sum) {
+      fprintf(stderr, "%s is not a state of this system card\n", st_load.c_str()); return 1;
+    }
+  }
   top->core_reset = 0;
   running = true;
   run_from = clocks;

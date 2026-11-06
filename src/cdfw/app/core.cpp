@@ -32,6 +32,7 @@
 
 #include "core.h"
 #include "core_settings.h"
+#include "state.h"
 #include "riscprintf.h"
 #include "hardware.h"
 #include "apf.h"
@@ -66,6 +67,17 @@ void core_poll_io(){
 
 bool old_region = 0;
 bool old_arcade = 0;
+
+// A save state's hooks (app/state.h): CORE_INPUT's bits from the core, CORE_OUTPUT's to it
+static uint32_t state_bits = 0;
+bool core_park_asked() { return CORE_INPUT_REGISTOR() & INPUT_PARK; }
+bool core_state_in() { return CORE_INPUT_REGISTOR() & INPUT_STATE_IN; }
+void core_park_wait() {}
+void core_set_parked(bool parked, bool restored)
+{
+	state_bits = (parked ? OUTPUT_PARKED : 0) | (restored ? OUTPUT_RESTORED : 0);
+	CORE_OUTPUT_REGISTOR() = core_output_bits(AFP_REGISTOR(1)) | state_bits;
+}
 void core_reg_update(){
 	// This can be used for polling the APF regs from the interaction menu to change core settings
 	// Region setup
@@ -78,8 +90,8 @@ void core_reg_update(){
 	// if (old_region != AFP_REGISTOR(1) & 0x1) full_core_reset();
 	// Arcade Setup
 
-	// The Arcade Card and the Memory Base 128, as asked
-	CORE_OUTPUT_REGISTOR() = core_output_bits(AFP_REGISTOR(1));
+	// The Arcade Card and the Memory Base 128, as asked, and the drive's part in a save state
+	CORE_OUTPUT_REGISTOR() = core_output_bits(AFP_REGISTOR(1)) | state_bits;
 	// if (old_arcade != AFP_REGISTOR(1) & 0x2) full_core_reset();
 
 };

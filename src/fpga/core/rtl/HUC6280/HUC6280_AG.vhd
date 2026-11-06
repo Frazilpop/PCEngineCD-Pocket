@@ -15,6 +15,9 @@ entity HUC6280_AG is
 		  X   			: in std_logic_vector(7 downto 0);
 		  Y   			: in std_logic_vector(7 downto 0);
 		  DR   			: in std_logic_vector(7 downto 0);
+		  -- a save state's chain writes the PC (HUC6280_CPU.vhd)
+		  SS_WE			: in std_logic := '0';
+		  SS_PC			: in std_logic_vector(15 downto 0) := (others => '0');
 
 		  PC				: out std_logic_vector(15 downto 0);
         AA     		: out std_logic_vector(15 downto 0)
@@ -64,6 +67,9 @@ begin
 		elsif rising_edge(CLK) then
 			if CE = '1' then
 				PCr <= NextPC;
+			end if;
+			if SS_WE = '1' then
+				PCr <= SS_PC;
 			end if;
 		end if;
 	end process;

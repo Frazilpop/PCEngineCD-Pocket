@@ -33,6 +33,7 @@
 // #include <inttypes.h>
 #include "fileio.h"
 #include "osd_menu.h"
+#include "../../app/state.h"
 // #include "printf.h"
 // Each of the two buffers in the scratch RAM. RISCFileCacheSize makes them smaller
 // when a disc needs the rest of the scratch RAM for its subcode.
@@ -299,4 +300,56 @@ void RISCSendZeros(uint8_t cmd0, uint8_t cmd1, uint8_t cmd_hps, uint32_t size) {
   spi_w(command);
   for (uint32_t i = 0; i < size; i += 2) spi_w(0);
   HPS_DisableIO();
+}
+
+// A save state (app/state.h): the cache's tags out, and back in with what the two buffers
+// held read again from the card, so the next sector after a load is no later than the
+// saving run's. The track's file is already open in the slot (pcecd.cpp).
+void RISCFileCacheSave(cache_state_t *s) {
+  s->cache_size = sector_cache_size;
+  s->track_number = Sector_track_number;
+  s->change_of_file = change_of_file;
+  s->buffer0_enabled = sector_buffer0_enabled;
+  s->buffer1_enabled = sector_buffer1_enabled;
+  s->cache0_enabled = cache_buffer_0_enabled;
+  s->cache1_enabled = cache_buffer_1_enabled;
+  s->wait_timer = wait_timer;
+  s->dataslot = sector_buffer_dataslot;
+  s->buffer0_address = sector_buffer0_address;
+  s->buffer1_address = sector_buffer1_address;
+  s->size = sector_buffer_size;
+  s->size_max = sector_buffer_size_max;
+  s->selector = sector_buffer_selector;
+  s->offset = sector_buffer_offset;
+  s->processing = sector_buffer_processing;
+  s->transfer_size_max = sector_buffer_transfer_size_max;
+}
+
+void RISCFileCacheLoad(const cache_state_t *s) {
+  sector_cache_size = s->cache_size;
+  Sector_track_number = s->track_number;
+  change_of_file = s->change_of_file;
+  sector_buffer0_enabled = s->buffer0_enabled;
+  sector_buffer1_enabled = s->buffer1_enabled;
+  cache_buffer_0_enabled = s->cache0_enabled;
+  cache_buffer_1_enabled = s->cache1_enabled;
+  wait_timer = s->wait_timer;
+  sector_buffer_dataslot = s->dataslot;
+  sector_buffer0_address = s->buffer0_address;
+  sector_buffer1_address = s->buffer1_address;
+  sector_buffer_size = s->size;
+  sector_buffer_size_max = s->size_max;
+  sector_buffer_selector = s->selector;
+  sector_buffer_offset = s->offset;
+  sector_buffer_processing = s->processing;
+  sector_buffer_transfer_size_max = s->transfer_size_max;
+  // each buffer as RISCFileSeek fills it: as much as the file has from its address
+  if (cache_buffer_0_enabled) {
+    uint32_t n = sector_buffer_transfer_size_max_process(sector_buffer_dataslot, sector_buffer0_address);
+    if (n) dataslot_read(sector_buffer_dataslot, APF_SCRACH_ADDRESS_OFFSET | MAIN_SCRACH_ADDRESS_OFFSET, sector_buffer0_address, n);
+  }
+  if (cache_buffer_1_enabled) {
+    uint32_t n = sector_buffer_transfer_size_max_process(sector_buffer_dataslot, sector_buffer1_address);
+    if (n) dataslot_read(sector_buffer_dataslot, APF_SCRACH_ADDRESS_OFFSET | (MAIN_SCRACH_ADDRESS_OFFSET + MEM_BUFFER_SIZE_C), sector_buffer1_address, n);
+  }
 }

@@ -52,6 +52,8 @@ SECTIONS
 
   . = ALIGN(4);
   _end = . ;
+  /* a save state's drive block is at 0xF000 to 0xF7FF (app/pcecd.cpp): nothing may reach it */
+  ASSERT(_end <= 0xF000, "the image and its stack reach the drive's block at 0xF000")
 
   .payload :
   {

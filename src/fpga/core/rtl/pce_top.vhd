@@ -97,7 +97,50 @@ entity pce_top is
 		VIDEO_HS		: out std_logic;
 		VIDEO_HBL	: out std_logic;
 		VIDEO_VBL	: out std_logic;
-		BORDER_OUT  : out std_logic
+		BORDER_OUT  : out std_logic;
+
+		-- A save state (docs/SAVESTATES.md), from main.sv's state_engine.sv. SS_HOLD stops
+		-- the timer, the PSG and the CD chips where they are, and the VDC's DMAs from
+		-- starting; SS_RST resets the CPU and the VDC alone, for a state to go into them.
+		-- SS_SHIFT moves the chain SS_CHAIN chooses by 16 bits, SS_SI in at its foot, its
+		-- head at SS_SO: 0 the CPU, 1 the PSG, 2 the VDC, 3 the VCE, 4 the CD chips, 5 the
+		-- Arcade Card (main.sv has 6 and 7). SS_SNAP and SS_REST
+		-- take and put back the VDC's snapshot. SS_SYNC: the CPU at an opcode fetch, where
+		-- CPU_PAUSE_EN parks it; SS_PARKED: parked. SS_WIN: the window for a clean point;
+		-- SS_BUSY: something on its way that a clean point waits for. SS_VPOS and SS_HPOS:
+		-- the VCE's raster. While SS_MEM, the memories' free ports are the engine's:
+		-- SS_MSEL chooses one (0 the CPU's RAM, 1 VRAM, 2 the PSG's waves, 3 the SAT,
+		-- 4 the palette), SS_MA the word, SS_MWE writes SS_MD, and SS_MQ has the word
+		-- read a clock after SS_MA. SS_FREEZE_OK: the ADPCM memory has nothing in flight.
+		-- While held, the CD chips' FIFOs are the engine's (cd.vhd's SS_F*).
+		SS_HOLD		: in  std_logic := '0';
+		SS_RST	: in  std_logic := '0';
+		SS_CHAIN		: in  std_logic_vector(3 downto 0) := (others => '0');
+		SS_SHIFT		: in  std_logic := '0';
+		SS_SI			: in  std_logic_vector(15 downto 0) := (others => '0');
+		SS_SO			: out std_logic_vector(15 downto 0);
+		SS_SNAP		: in  std_logic := '0';
+		SS_REST		: in  std_logic := '0';
+		SS_SYNC		: out std_logic;
+		SS_PARKED	: out std_logic;
+		SS_WIN		: out std_logic;
+		SS_BUSY		: out std_logic;
+		SS_VPOS		: out std_logic_vector(9 downto 0);
+		SS_HPOS		: out std_logic_vector(11 downto 0);
+		SS_MEM		: in  std_logic := '0';
+		SS_MSEL		: in  std_logic_vector(3 downto 0) := (others => '0');
+		SS_MA			: in  std_logic_vector(14 downto 0) := (others => '0');
+		SS_MWE		: in  std_logic := '0';
+		SS_MD			: in  std_logic_vector(15 downto 0) := (others => '0');
+		SS_MQ			: out std_logic_vector(15 downto 0);
+		SS_FREEZE_OK: out std_logic;
+		SS_FSEL		: in  std_logic_vector(1 downto 0) := (others => '0');
+		SS_FRD		: in  std_logic := '0';
+		SS_FWR		: in  std_logic := '0';
+		SS_FCLR		: in  std_logic := '0';
+		SS_FD			: in  std_logic_vector(31 downto 0) := (others => '0');
+		SS_FQ			: out std_logic_vector(31 downto 0);
+		SS_FCNT		: out std_logic_vector(12 downto 0)
 	);
 end pce_top;
 
@@ -172,6 +215,11 @@ signal gamepad_out	: std_logic_vector(1 downto 0);
 signal gamepad_port	: unsigned(2 downto 0);
 signal gamepad_nibble: std_logic;
 
+function bool_bit(b : boolean) return std_logic is
+begin
+	if b then return '1'; else return '0'; end if;
+end function;
+
 signal GENIE		: boolean;
 signal GENIE_DO	: std_logic_vector(7 downto 0);
 signal GENIE_DI   : std_logic_vector(7 downto 0);
@@ -220,6 +268,28 @@ signal AC_RAM_CS_N: std_logic;
 signal AC_RAM_A   : std_logic_vector(20 downto 0);
 signal AC_DO      : std_logic_vector(7 downto 0);
 
+-- the save state's
+signal SS_SO_CPU, SS_SO_PSG : std_logic_vector(15 downto 0);
+signal SS_WF_Q		: std_logic_vector(4 downto 0);
+signal SS_RAM_Q	: std_logic_vector(7 downto 0);
+signal SS_VRAM_Q	: std_logic_vector(15 downto 0);
+signal SS_MSEL_D	: std_logic_vector(3 downto 0);
+signal SS_SO_VCE	: std_logic_vector(15 downto 0);
+signal SS_PAL_Q	: std_logic_vector(8 downto 0);
+signal VCE_IDLE	: std_logic;
+signal VDC0_IDLE	: std_logic;
+signal SS_SO_CD	: std_logic_vector(15 downto 0);
+signal SS_SO_AC	: std_logic_vector(15 downto 0);
+signal SS_SO_VDC	: std_logic_vector(15 downto 0);
+signal SS_SAT_Q	: std_logic_vector(15 downto 0);
+signal VDC_RST_N	: std_logic;
+signal VRAM0_B_A	: std_logic_vector(14 downto 0);
+signal VRAM0_B_D	: std_logic_vector(15 downto 0);
+signal VRAM0_B_WE	: std_logic;
+signal RAM_B_A		: std_logic_vector(12 downto 0);
+signal RAM_B_D		: std_logic_vector(7 downto 0);
+signal RAM_B_WE	: std_logic;
+
 component ARCADE_CARD is
 	port(
 		CLK     : in  std_logic;
@@ -235,7 +305,11 @@ component ARCADE_CARD is
 		SEL_N   : out std_logic;
 
 		RAM_CS_N: out std_logic;
-		RAM_A   : out std_logic_vector(20 downto 0)
+		RAM_A   : out std_logic_vector(20 downto 0);
+
+		SS_SHIFT: in  std_logic;
+		SS_SI   : in  std_logic_vector(15 downto 0);
+		SS_SO   : out std_logic_vector(15 downto 0)
 	);
 end component;
 
@@ -306,8 +380,40 @@ port map(
 	VDCNUM   => VDCNUM,
 
 	AUD_LDATA=> PCE_SL,
-	AUD_RDATA=> PCE_SR
+	AUD_RDATA=> PCE_SR,
+
+	SS_HOLD	=> SS_HOLD,
+	SS_RST	=> SS_RST,
+	SS_REPARK=> SS_REST,
+	SS_SHIFT	=> SS_SHIFT and bool_bit(SS_CHAIN = x"0"),
+	SS_SHIFT_PSG => SS_SHIFT and bool_bit(SS_CHAIN = x"1"),
+	SS_SI		=> SS_SI,
+	SS_SO		=> SS_SO_CPU,
+	SS_SO_PSG=> SS_SO_PSG,
+	SS_SYNC	=> SS_SYNC,
+	SS_PARKED=> SS_PARKED,
+	SS_WF_A	=> SS_MA(7 downto 0),
+	SS_WF_WE	=> SS_MWE and bool_bit(SS_MSEL = x"2"),
+	SS_WF_D	=> SS_MD(4 downto 0),
+	SS_WF_Q	=> SS_WF_Q
 );
+
+SS_SO <= SS_SO_CPU when SS_CHAIN = x"0"
+    else SS_SO_PSG when SS_CHAIN = x"1"
+    else SS_SO_VDC when SS_CHAIN = x"2"
+    else SS_SO_VCE when SS_CHAIN = x"3"
+    else SS_SO_CD when SS_CHAIN = x"4"
+    else SS_SO_AC when SS_CHAIN = x"5"
+    else (others => '0');
+
+-- a memory's word, a clock after its address (the RAMs' read is registered)
+SS_MSEL_D <= SS_MSEL when rising_edge(CLK);
+SS_MQ <= x"00" & SS_RAM_Q when SS_MSEL_D = x"0"
+    else SS_VRAM_Q when SS_MSEL_D = x"1"
+    else "00000000000" & SS_WF_Q when SS_MSEL_D = x"2"
+    else SS_SAT_Q when SS_MSEL_D = x"3"
+    else "0000000" & SS_PAL_Q when SS_MSEL_D = x"4"
+    else (others => '0');
 
 JOY_OUT <= CPU_IO_DO(1 downto 0);
 
@@ -324,7 +430,9 @@ port map(
 
 	-- CPU Interface
 	A			=> CPU_A(2 downto 0),
-	CE_N		=> CPU_VCE_SEL_N,
+	-- (held for a save state, the VCE's port is shut: it answers its select without the
+	-- CPU's clock enable, and the CPU's address moves as its chain does)
+	CE_N		=> CPU_VCE_SEL_N or SS_HOLD,
 	WR_N		=> CPU_WR_N,
 	RD_N		=> CPU_RD_N,
 	DI			=> CPU_DO,
@@ -354,13 +462,30 @@ port map(
 	VS_N		=> VS_N,
 	HS_N		=> HS_N,
 	HBL		=> VIDEO_HBL,
-	VBL		=> VIDEO_VBL
+	VBL		=> VIDEO_VBL,
+
+	SS_VPOS	=> SS_VPOS,
+	SS_HPOS	=> SS_HPOS,
+	SS_IDLE	=> VCE_IDLE,
+	SS_HOLD	=> SS_HOLD,
+	SS_SHIFT	=> SS_SHIFT and bool_bit(SS_CHAIN = x"3"),
+	SS_SI		=> SS_SI,
+	SS_SO		=> SS_SO_VCE,
+	SS_MEM	=> SS_MEM,
+	SS_MA		=> SS_MA(8 downto 0),
+	SS_MWE	=> SS_MWE and bool_bit(SS_MSEL = x"4"),
+	SS_MD		=> SS_MD(8 downto 0),
+	SS_MQ		=> SS_PAL_Q
 );
+
+SS_BUSY <= not VCE_IDLE or not VDC0_IDLE;
+
+VDC_RST_N <= RESET_N and not SS_RST;
 
 VDC0 : entity work.HUC6270
 port map(
 	CLK 		=> CLK,
-	RST_N		=> RESET_N,
+	RST_N		=> VDC_RST_N,
 	CLR_MEM  => COLD_RESET,
 
 	-- CPU Interface
@@ -394,7 +519,21 @@ port map(
 	RAM_WE	=> VRAM0_WE,
 	
 	BG_EN		=> BG_EN,
-	SPR_EN	=> SPR_EN
+	SPR_EN	=> SPR_EN,
+
+	SS_HOLD	=> SS_HOLD,
+	SS_SHIFT	=> SS_SHIFT and bool_bit(SS_CHAIN = x"2"),
+	SS_SI		=> SS_SI,
+	SS_SO		=> SS_SO_VDC,
+	SS_SNAP	=> SS_SNAP,
+	SS_REST	=> SS_REST,
+	SS_SAT	=> SS_MEM and bool_bit(SS_MSEL = x"3"),
+	SS_SAT_A	=> SS_MA(7 downto 0),
+	SS_SAT_WE=> SS_MWE and bool_bit(SS_MSEL = x"3"),
+	SS_SAT_D	=> SS_MD,
+	SS_SAT_Q	=> SS_SAT_Q,
+	SS_WIN	=> SS_WIN,
+	SS_IDLE	=> VDC0_IDLE
 );
 
 VRAM0 : entity work.dpram generic map (addr_width => 15, data_width => 16, disable_value => '0')
@@ -406,10 +545,15 @@ port map (
 	wren_a	=> VRAM0_WE,
 	q_a		=> VRAM0_DI,
 
-	address_b=> CLR_A,
-	data_b	=> (others => '0'),
-	wren_b	=> CLR_WE
+	-- port B: the clear at a cold reset, and a save state's
+	address_b=> VRAM0_B_A,
+	data_b	=> VRAM0_B_D,
+	wren_b	=> VRAM0_B_WE,
+	q_b		=> SS_VRAM_Q
 );
+VRAM0_B_A  <= SS_MA when SS_MEM = '1' else CLR_A;
+VRAM0_B_D  <= SS_MD when SS_MEM = '1' else (others => '0');
+VRAM0_B_WE <= (SS_MWE and bool_bit(SS_MSEL = x"1")) when SS_MEM = '1' else CLR_WE;
 
 CLR_A  <= CLR_A + 1  when rising_edge(CLK);
 CLR_WE <= COLD_RESET when rising_edge(CLK);
@@ -630,10 +774,15 @@ port map (
 	wren_a	=> CPU_CE and not CPU_RAM_SEL_N and not CPU_WR_N,
 	q_a		=> RAM_DO,
 
-	address_b=> CLR_A(12 downto 0),
-	data_b	=> (others => '0'),
-	wren_b	=> CLR_WE
+	-- port B: the clear at a cold reset, and a save state's
+	address_b=> RAM_B_A,
+	data_b	=> RAM_B_D,
+	wren_b	=> RAM_B_WE,
+	q_b		=> SS_RAM_Q
 );
+RAM_B_A  <= SS_MA(12 downto 0) when SS_MEM = '1' else CLR_A(12 downto 0);
+RAM_B_D  <= SS_MD(7 downto 0) when SS_MEM = '1' else (others => '0');
+RAM_B_WE <= (SS_MWE and bool_bit(SS_MSEL = x"0")) when SS_MEM = '1' else CLR_WE;
 
 RAM_A(12 downto 0)  <= CPU_A(12 downto 0);
 
@@ -692,7 +841,20 @@ port map(
 	
 	CD_SL			=> CDDA_SL,
 	CD_SR			=> CDDA_SR,
-	AD_S			=> ADPCM_S
+	AD_S			=> ADPCM_S,
+
+	SS_HOLD		=> SS_HOLD,
+	SS_SHIFT		=> SS_SHIFT and bool_bit(SS_CHAIN = x"4"),
+	SS_SI			=> SS_SI,
+	SS_SO			=> SS_SO_CD,
+	SS_FREEZE_OK=> SS_FREEZE_OK,
+	SS_FSEL		=> SS_FSEL,
+	SS_FRD		=> SS_FRD,
+	SS_FWR		=> SS_FWR,
+	SS_FCLR		=> SS_FCLR,
+	SS_FD			=> SS_FD,
+	SS_FQ			=> SS_FQ,
+	SS_FCNT		=> SS_FCNT
 );
 
 CD_RAM_A  <= '0' & AC_RAM_A when AC_RAM_CS_N = '0'
@@ -716,7 +878,11 @@ port map(
 	SEL_N   => AC_SEL_N,
 
 	RAM_CS_N=> AC_RAM_CS_N,
-	RAM_A   => AC_RAM_A
+	RAM_A   => AC_RAM_A,
+
+	SS_SHIFT=> SS_SHIFT and bool_bit(SS_CHAIN = x"5"),
+	SS_SI   => SS_SI,
+	SS_SO   => SS_SO_AC
 );
 
 PSG_SR <= signed(PCE_SR(23 downto 8));

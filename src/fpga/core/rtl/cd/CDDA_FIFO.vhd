@@ -51,6 +51,7 @@ ENTITY CDDA_FIFO IS
 		almost_full		: OUT STD_LOGIC ;
 		empty		: OUT STD_LOGIC ;
 		full		: OUT STD_LOGIC ;
+		usedw		: OUT STD_LOGIC_VECTOR (9 DOWNTO 0);	-- for a save state's turning (docs/SAVESTATES.md)
 		q		: OUT STD_LOGIC_VECTOR (31 DOWNTO 0)
 	);
 END CDDA_FIFO;
@@ -88,6 +89,7 @@ ARCHITECTURE SYN OF cdda_fifo IS
 			almost_full	: OUT STD_LOGIC ;
 			empty	: OUT STD_LOGIC ;
 			full	: OUT STD_LOGIC ;
+			usedw	: OUT STD_LOGIC_VECTOR (9 DOWNTO 0);
 			q	: OUT STD_LOGIC_VECTOR (31 DOWNTO 0)
 	);
 	END COMPONENT;
@@ -121,6 +123,7 @@ BEGIN
 		almost_full => sub_wire0,
 		empty => sub_wire1,
 		full => sub_wire2,
+		usedw => usedw,
 		q => sub_wire3
 	);
 

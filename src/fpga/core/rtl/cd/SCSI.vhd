@@ -38,7 +38,22 @@ entity SCSI is
 		CD_DATA_END	: out std_logic;
 		STOP_CD_SND	: out std_logic;
 		
-		DBG_DATAIN_CNT: out unsigned(15 downto 0)
+		DBG_DATAIN_CNT: out unsigned(15 downto 0);
+
+		-- A save state (docs/SAVESTATES.md): SS_HOLD stops it; its 251 bits out at SS_Q, and in
+		-- from SS_D at SS_WE. While held, the FIFO is the engine's: SS_FIFO_RD takes its head
+		-- (SS_FIFO_Q, before), SS_FIFO_WR puts SS_FIFO_D at its tail, SS_FIFO_CLR empties it;
+		-- SS_FIFO_CNT is how many it holds.
+		SS_HOLD		: in std_logic := '0';
+		SS_Q			: out std_logic_vector(250 downto 0);
+		SS_D			: in std_logic_vector(250 downto 0) := (others => '0');
+		SS_WE			: in std_logic := '0';
+		SS_FIFO_RD	: in std_logic := '0';
+		SS_FIFO_WR	: in std_logic := '0';
+		SS_FIFO_CLR	: in std_logic := '0';
+		SS_FIFO_D	: in std_logic_vector(7 downto 0) := (others => '0');
+		SS_FIFO_Q	: out std_logic_vector(7 downto 0);
+		SS_FIFO_CNT	: out std_logic_vector(12 downto 0)
 	);
 end SCSI;
 
@@ -98,7 +113,94 @@ architecture rtl of SCSI is
 	signal STAT_COUNT    : unsigned(15 downto 0);
 	signal DELAY_COUNT   : unsigned(16 downto 0);
 
+	-- the save state's
+	signal F_D			: std_logic_vector(7 downto 0);
+	signal F_WR, F_RD, F_CLR : std_logic;
+	signal F_USEDW		: std_logic_vector(11 downto 0);
+	function sp_bits(s : SCSIPhase_t) return std_logic_vector is
+	begin
+		case s is
+			when SP_FREE => return "0000";
+			when SP_COMM_BEFOREREQ => return "0001";
+			when SP_COMM_START => return "0010";
+			when SP_COMM_END => return "0011";
+			when SP_STAT_START => return "0100";
+			when SP_STAT_END => return "0101";
+			when SP_STAT_HOLD => return "0110";
+			when SP_MSGIN_START => return "0111";
+			when SP_MSGIN_END => return "1000";
+			when SP_MSGIN_HOLD => return "1001";
+			when SP_DATAIN_START => return "1010";
+			when SP_DATAIN_END => return "1011";
+			when SP_DATAOUT_START => return "1100";
+			when others => return "1101";
+		end case;
+	end function;
+	function sp_state(b : std_logic_vector(3 downto 0)) return SCSIPhase_t is
+	begin
+		case b is
+			when "0000" => return SP_FREE;
+			when "0001" => return SP_COMM_BEFOREREQ;
+			when "0010" => return SP_COMM_START;
+			when "0011" => return SP_COMM_END;
+			when "0100" => return SP_STAT_START;
+			when "0101" => return SP_STAT_END;
+			when "0110" => return SP_STAT_HOLD;
+			when "0111" => return SP_MSGIN_START;
+			when "1000" => return SP_MSGIN_END;
+			when "1001" => return SP_MSGIN_HOLD;
+			when "1010" => return SP_DATAIN_START;
+			when "1011" => return SP_DATAIN_END;
+			when "1100" => return SP_DATAOUT_START;
+			when others => return SP_DATAOUT_END;
+		end case;
+	end function;
+
 begin
+
+	SS_Q(7 downto 0) <= FIFO_D;
+	SS_Q(8) <= FIFO_WR_REQ;
+	SS_Q(9) <= CD_WR_OLD;
+	SS_Q(17 downto 10) <= DBO;
+	SS_Q(18) <= BSY_Nr;
+	SS_Q(19) <= MSG_Nr;
+	SS_Q(20) <= CD_Nr;
+	SS_Q(21) <= IO_Nr;
+	SS_Q(22) <= REQ_Nr;
+	SS_Q(30 downto 23) <= COMM(0);
+	SS_Q(38 downto 31) <= COMM(1);
+	SS_Q(46 downto 39) <= COMM(2);
+	SS_Q(54 downto 47) <= COMM(3);
+	SS_Q(62 downto 55) <= COMM(4);
+	SS_Q(70 downto 63) <= COMM(5);
+	SS_Q(78 downto 71) <= COMM(6);
+	SS_Q(86 downto 79) <= COMM(7);
+	SS_Q(94 downto 87) <= COMM(8);
+	SS_Q(102 downto 95) <= COMM(9);
+	SS_Q(110 downto 103) <= COMM(10);
+	SS_Q(118 downto 111) <= COMM(11);
+	SS_Q(122 downto 119) <= std_logic_vector(COMM_POS);
+	SS_Q(130 downto 123) <= DATA_BUF(0);
+	SS_Q(138 downto 131) <= DATA_BUF(1);
+	SS_Q(146 downto 139) <= DATA_BUF(2);
+	SS_Q(154 downto 147) <= DATA_BUF(3);
+	SS_Q(162 downto 155) <= DATA_BUF(4);
+	SS_Q(170 downto 163) <= DATA_BUF(5);
+	SS_Q(178 downto 171) <= DATA_BUF(6);
+	SS_Q(186 downto 179) <= DATA_BUF(7);
+	SS_Q(194 downto 187) <= DATA_BUF(8);
+	SS_Q(202 downto 195) <= DATA_BUF(9);
+	SS_Q(206 downto 203) <= std_logic_vector(DATA_POS);
+	SS_Q(210 downto 207) <= sp_bits(SP);
+	SS_Q(211) <= STOP_CD_SND;
+	SS_Q(212) <= COMM_OUT;
+	SS_Q(213) <= DATA_OUT;
+	SS_Q(214) <= CD_DATA_END;
+	SS_Q(215) <= STAT_PEND;
+	SS_Q(216) <= DOUT_PEND;
+	SS_Q(217) <= FIFO_RD_REQ;
+	SS_Q(233 downto 218) <= std_logic_vector(STAT_COUNT);
+	SS_Q(250 downto 234) <= std_logic_vector(DELAY_COUNT);
 
 	process( RESET_N, CLK )
 	begin
@@ -107,6 +209,7 @@ begin
 			FIFO_WR_REQ <= '0';
 			--CD_WR_OLD <= '0';
 		elsif rising_edge(CLK) then
+			if SS_HOLD = '0' then
 			FIFO_WR_REQ <= '0';
 --			if EN = '1' then
 				CD_WR_OLD <= CD_WR;
@@ -117,23 +220,38 @@ begin
 					end if;
 				end if;
 --			end if;
+			end if;
+			if SS_WE = '1' then
+				FIFO_D <= SS_D(7 downto 0);
+				FIFO_WR_REQ <= SS_D(8);
+				CD_WR_OLD <= SS_D(9);
+			end if;
 		end if;
 	end process;
+
+	-- held, the FIFO is the engine's; its aclr stays the chip's reset
+	F_D   <= SS_FIFO_D when SS_HOLD = '1' else FIFO_D;
+	F_WR  <= SS_FIFO_WR when SS_HOLD = '1' else FIFO_WR_REQ;
+	F_RD  <= SS_FIFO_RD when SS_HOLD = '1' else FIFO_RD_REQ;
+	F_CLR <= not RESET_N or SS_FIFO_CLR;
+	SS_FIFO_Q <= FIFO_Q;
+	SS_FIFO_CNT <= FULL & F_USEDW;
 
 	
 	FIFO : entity work.SCSI_FIFO 
 	port map(
-		aclr     	=> not RESET_N,
+		aclr     	=> F_CLR,
 
 		clock			=> CLK,
-		data			=> FIFO_D,
-		wrreq			=> FIFO_WR_REQ,
+		data			=> F_D,
+		wrreq			=> F_WR,
 		full			=> FULL,
 		
 		almost_full	=> CD_almost_full,
-		rdreq			=> FIFO_RD_REQ,
+		rdreq			=> F_RD,
 		empty			=> EMPTY,
-		q				=> FIFO_Q
+		q				=> FIFO_Q,
+		usedw			=> F_USEDW
 	);
 
 	process( CLK, RESET_N ) begin
@@ -164,6 +282,7 @@ begin
 			DATAIN_CNT  <= (others => '0');
 
 		elsif rising_edge( CLK ) then
+			if SS_HOLD = '0' then
 			if STAT_GET = '1' then
 				STAT_PEND <= '1';
 			end if;
@@ -357,6 +476,49 @@ begin
 						
 					when others => null;
 				end case;
+			end if;
+			end if;
+			if SS_WE = '1' then
+				DBO <= SS_D(17 downto 10);
+				BSY_Nr <= SS_D(18);
+				MSG_Nr <= SS_D(19);
+				CD_Nr <= SS_D(20);
+				IO_Nr <= SS_D(21);
+				REQ_Nr <= SS_D(22);
+				COMM(0) <= SS_D(30 downto 23);
+				COMM(1) <= SS_D(38 downto 31);
+				COMM(2) <= SS_D(46 downto 39);
+				COMM(3) <= SS_D(54 downto 47);
+				COMM(4) <= SS_D(62 downto 55);
+				COMM(5) <= SS_D(70 downto 63);
+				COMM(6) <= SS_D(78 downto 71);
+				COMM(7) <= SS_D(86 downto 79);
+				COMM(8) <= SS_D(94 downto 87);
+				COMM(9) <= SS_D(102 downto 95);
+				COMM(10) <= SS_D(110 downto 103);
+				COMM(11) <= SS_D(118 downto 111);
+				COMM_POS <= unsigned(SS_D(122 downto 119));
+				DATA_BUF(0) <= SS_D(130 downto 123);
+				DATA_BUF(1) <= SS_D(138 downto 131);
+				DATA_BUF(2) <= SS_D(146 downto 139);
+				DATA_BUF(3) <= SS_D(154 downto 147);
+				DATA_BUF(4) <= SS_D(162 downto 155);
+				DATA_BUF(5) <= SS_D(170 downto 163);
+				DATA_BUF(6) <= SS_D(178 downto 171);
+				DATA_BUF(7) <= SS_D(186 downto 179);
+				DATA_BUF(8) <= SS_D(194 downto 187);
+				DATA_BUF(9) <= SS_D(202 downto 195);
+				DATA_POS <= unsigned(SS_D(206 downto 203));
+				SP <= sp_state(SS_D(210 downto 207));
+				STOP_CD_SND <= SS_D(211);
+				COMM_OUT <= SS_D(212);
+				DATA_OUT <= SS_D(213);
+				CD_DATA_END <= SS_D(214);
+				STAT_PEND <= SS_D(215);
+				DOUT_PEND <= SS_D(216);
+				FIFO_RD_REQ <= SS_D(217);
+				STAT_COUNT <= unsigned(SS_D(233 downto 218));
+				DELAY_COUNT <= unsigned(SS_D(250 downto 234));
 			end if;
 		end if;
 	end process;

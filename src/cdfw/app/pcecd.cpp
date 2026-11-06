@@ -9,12 +9,15 @@
 */
 #include "fileio.h"
 #include "cue.h"
+#include "state.h"
 
 static int need_reset=0;
 static uint8_t has_command = 0;
 bool bios_us = false;
 
 uint32_t poll_timer = 0;
+static uint8_t last_req = 0;	// the chips' count of events, as last seen (hps_ext.v's cd_req)
+static uint8_t adj = 0;
 	
 // A US system card has the words its Japanese one has in Japanese, and the drive
 // answers a US console's signature for it (cd.vhd's registers C5 to C7): MiSTer's
@@ -76,10 +79,124 @@ static void tray_poll()
 	}
 }
 
+// The first reset of the drive loads the disc, as nothing else does
+static void first_load()
+{
+	drive_trace.bios_size = dataslot_size(1);
+	osd_trace_stage('s');
+	bios_us = bios_is_us();
+	drive_trace.bios_us = bios_us;
+	osd_trace_stage('c');
+	cue.Reset();
+	pcecd_set_image(DATASLOT_BRAM(0), DATASLOT_BRAM(1));
+	osd_trace_stage(cue.loaded ? 'r' : 'f');
+}
+
+// ---- Save states (docs/SAVESTATES.md, The drive; app/state.h) ----
+//
+// The drive's block: 2K at 0xF000 in the MPU's RAM, above _end, where neither the image
+// nor its stack reaches. The bridge reads and writes it as the state file's 0x800 to 0xFFF.
+#ifndef DRIVE_BLOCK
+#define DRIVE_BLOCK ((uint8_t *)0xF000)
+#endif
+#define BLOCK_MAGIC 0x42444350	// PCDB
+#define BLOCK_VERSION 1
+
+typedef struct {
+	uint32_t magic, version;
+	uint32_t clock_hi, clock_lo;	// the drive's clock when it parked
+	uint32_t disc_id;				// which disc (cue_t::DiscId)
+	int32_t need_reset;
+	uint32_t poll_timer, tray_timer;
+	uint8_t has_command, bios_us, tray, last_req, adj, pad[3];
+	dataslot_type aft;				// the track file the read cache reads from
+	cue_state_t cue;
+	cache_state_t cache;
+} drive_block_t;
+static_assert(sizeof(drive_block_t) <= 2048, "the drive's block is 2K");
+
+static void block_out(drive_block_t *b, uint32_t hi, uint32_t lo)
+{
+	memset(b, 0, sizeof(*b));
+	b->magic = BLOCK_MAGIC;
+	b->version = BLOCK_VERSION;
+	b->clock_hi = hi;
+	b->clock_lo = lo;
+	b->disc_id = cue.loaded ? cue.DiscId() : 0;
+	b->need_reset = need_reset;
+	b->poll_timer = poll_timer;
+	b->tray_timer = tray_timer;
+	b->has_command = has_command;
+	b->bios_us = bios_us;
+	b->tray = tray;
+	b->last_req = last_req;
+	b->adj = adj;
+	b->aft = aft;
+	cue.SaveState(&b->cue);
+	RISCFileCacheSave(&b->cache);
+}
+
+// A loaded state's block back in: false if it isn't one, or is another disc's
+static bool block_in(const drive_block_t *b)
+{
+	if ((b->magic != BLOCK_MAGIC) || (b->version != BLOCK_VERSION)) return false;
+	if (!cue.loaded) first_load();		// a wake's state can come before the console's first reset
+	if (b->disc_id && (!cue.loaded || (cue.DiscId() != b->disc_id))) return false;
+	// the track file the cache was reading, open again in its slot if another is
+	if (strcmp(aft.aft_filename, b->aft.aft_filename) || strcmp(aft.aft_filepath, b->aft.aft_filepath)) {
+		static char path[sizeof(b->aft.aft_filepath) + sizeof(b->aft.aft_filename)];
+		dataslot_type a = b->aft;
+		snprintf(path, sizeof(path), "%s%s", b->aft.aft_filepath, b->aft.aft_filename);
+		if (OpenFileNameDataSlot(&a, path)) return false;
+	}
+	aft = b->aft;
+	need_reset = b->need_reset;
+	poll_timer = b->poll_timer;
+	tray_timer = b->tray_timer;
+	has_command = b->has_command;
+	bios_us = b->bios_us;
+	tray = (decltype(tray))b->tray;
+	last_req = b->last_req;
+	adj = b->adj;
+	cue.LoadState(&b->cue);
+	RISCFileCacheLoad(&b->cache);
+	return true;
+}
+
+// Asked to park: at the top of a pass, with any read ahead landed, the drive writes its
+// block and waits, its clock standing still. A load's words all in, it reads the block
+// back. A block it can't take (another disc, or none) leaves the tray open, so the game
+// sees no disc rather than the wrong one.
+static void park()
+{
+	drive_block_t *b = (drive_block_t *)DRIVE_BLOCK;
+	uint32_t hi, lo;
+	while (!dataslot_ready());
+	drive_clock_get(&hi, &lo);
+	block_out(b, hi, lo);
+	core_set_parked(true, false);
+	bool restored = false;
+	while (core_park_asked()) {
+		if (!restored && core_state_in()) {
+			if (block_in(b)) {
+				hi = b->clock_hi;
+				lo = b->clock_lo;
+			}
+			else {
+				cue.OpenTray();
+			}
+			restored = true;
+			core_set_parked(true, true);
+		}
+		core_park_wait();
+	}
+	drive_clock_set(hi, lo);
+	core_set_parked(false, false);
+}
+
 void pcecd_poll()
 {
-	static uint8_t last_req = 0;
-	static uint8_t adj = 0;
+	if (core_park_asked()) park();
 
 	if (need_reset) {
 		need_reset = 0;
@@ -88,14 +205,7 @@ void pcecd_poll()
 		// as on MiSTer. A game resetting the drive used to throw the TOC away and read
 		// the whole CUE again, every file of it, with the game waiting on the drive.
 		if (!cue.loaded) {
-			drive_trace.bios_size = dataslot_size(1);
-			osd_trace_stage('s');
-			bios_us = bios_is_us();
-			drive_trace.bios_us = bios_us;
-			osd_trace_stage('c');
-			cue.Reset();
-			pcecd_set_image(DATASLOT_BRAM(0), DATASLOT_BRAM(1));
-			osd_trace_stage(cue.loaded ? 'r' : 'f');
+			first_load();
 		}
 		else {
 			cue.Reset();
