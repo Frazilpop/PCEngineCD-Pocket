@@ -15,6 +15,18 @@
 //   --state-load FILE     at frame --load-at (30) write FILE in and let it go
 //   --resave FILE         with --state-load: before the load lets go, read the state
 //                         straight back out into FILE
+//   --after N             end the run N whole frames after the let-go (or at --frames)
+//   --pocket              all of these through the Pocket's side instead (pocket_sim.sv:
+//                         state_bridge.sv, and the drive's block in the MPU's RAM through
+//                         controller_rom.v, as core_top.v joins them), on clk_74a with the
+//                         bridge's commands, reads and writes as the Pocket gives them: a
+//                         32-bit word every SIM_POCKET_PERIOD clocks (88), SIM_POCKET_CHUNK
+//                         bytes (4096) then a wait of SIM_POCKET_STALL clocks (40000), each
+//                         chunk's first word read again. SIM_POCKET_RESET=1: the load is the
+//                         launch's, the file written with the Pocket's reset on before the
+//                         firmware has run (a wake), --load-at not used. SIM_POCKET_BADSUM=1:
+//                         the file's system card sum changed; SIM_POCKET_ACFLAG=1: its Arcade
+//                         Card flag set (both to be refused, the game going on)
 // From the clock the console is let go, after.txt has each whole frame: its number
 // from the let-go, its picture's CRC and a CRC of the chips' own sound (the PSG's,
 // CD audio's and ADPCM's outputs before the filters) on every clock of it.
@@ -31,9 +43,11 @@
 #include <vector>
 #include <zlib.h>
 #include "Vsim_top.h"
+#include "Vpocket.h"
+#include "Vpocket___024root.h"
 #include "verilated.h"
 #include "drive.h"
-extern uint8_t sim_drive_block[2048];	// drive.cpp's: the firmware's block for a save state
+extern uint8_t *sim_drive_block;		// drive.cpp's: the firmware's block for a save state
 #include "save_size.h"
 #include "core_settings.h"
 
@@ -56,6 +70,7 @@ static long press_file_at;
 static std::string save_in, save_out;		// the Save slot: loaded before the card, written at the end
 static uint32_t save_loaded;
 static bool mb128_on;
+static bool set_ac, set_mb128;		// the Arcade System and MB128 settings, as CORE_OUTPUT has them once the firmware runs
 static int mb128_state;
 
 // ---- save states: the harness's side of the state window ----
@@ -72,6 +87,7 @@ static bool resaving, released;
 static uint64_t t_cmd;
 static FILE *fa;				// after.txt
 static long rel_frame;
+static long after_n;				// --after: the run ends that many whole frames after the let-go
 static uint32_t snd_crc;
 static uint32_t snd_adpcm, snd_cdda;		// clocks of the frame with ADPCM, and CD audio, not silent
 static std::vector<uint8_t> card_bytes;
@@ -270,7 +286,7 @@ static void frame_done() {
   for (auto &p : presses) if (nframe >= p.from && nframe < p.to) pad |= p.bits;
   top->pad = pad;
 
-  if (nframe >= frames) finish();
+  if (nframe >= frames || (after_n > 0 && fa && rel_frame >= after_n)) finish();
 }
 
 static void ss_report(const char *what) {
@@ -358,11 +374,135 @@ static void ss_step() {
   // after a resave's read-out, H_WAITGO's go ends the load as well
 }
 
+// ---- --pocket: the Pocket's side (pocket_sim.sv), on clk_74a, Genesis-Pocket's harness ----
+static Vpocket *pb;
+static int P_PERIOD = 88, P_CHUNK = 4096, P_STALL = 40000;
+static bool p_wake;					// SIM_POCKET_RESET: the file with the reset on, before the firmware
+static enum { P_IDLE, P_ACK, P_POLL, P_DELAY, P_READ, P_STALLING, P_WRITE, P_LRESET, P_LACK, P_LPOLL, P_DONE } ps = P_IDLE;
+static std::vector<uint8_t> pfile;
+static long pa, pchunk_end, pt, pfile_bytes;
+static bool pfirst, p_loaded, p_resaving;
+static double pphase;
+static int pre_status, pre_do, p_status_old;
+
+static void p_start_save(const std::string &file) {
+  st_out = file; pb->savestate_start = 1; ps = P_ACK; t_cmd = clocks;
+}
+
+// a clock of clk_sys for the bridge: what the console showed before this edge in, its new
+// outputs out for the console's next
+static void pocket_sys_edge() {
+  pb->ss_status = pre_status; pb->ss_do = pre_do;
+  pb->card_size = top->ss_card_size; pb->card_sum = top->ss_card_sum; pb->ss_words = top->ss_words;
+  pb->mb128_on = set_mb128; pb->ac_on = set_ac;		// core_top.v's ss_setting
+  pb->clk_sys = 1; pb->eval();
+  top->ss_save = pb->ss_save; top->ss_load = pb->ss_load; top->ss_go = pb->ss_go;
+  top->ss_rd = pb->ss_rd; top->ss_wr = pb->ss_wr; top->ss_addr = pb->ss_addr; top->ss_di = pb->ss_di;
+  pb->clk_sys = 0; pb->eval();
+  // the console let go: its window from ok to idle
+  if (p_status_old == 2 && top->ss_status == 0) ss_let_go();
+  p_status_old = top->ss_status;
+}
+
+// the Pocket, a clock of clk_74a
+static void pocket_74a() {
+  pb->bridge_rd = 0; pb->bridge_wr = 0;
+  switch (ps) {
+  case P_IDLE:
+    if (running && st_save_at >= 0 && nframe == st_save_at && st_out.empty()) { p_start_save(st_save); ss_report("save asked"); }
+    else if (running && !p_wake && !p_loaded && !st_loaded.empty() && nframe == st_load_at) {
+      ss_report("load begun");
+      p_loaded = true; pa = 0; pt = 0; pchunk_end = P_CHUNK; ps = P_WRITE;
+    }
+    break;
+  case P_ACK:
+    if (pb->savestate_start_ack) { pb->savestate_start = 0; ps = P_POLL; }
+    break;
+  case P_POLL:
+    if (pb->savestate_start_err) { ss_report("an error (Savestate Start)"); ps = P_DONE; }
+    else if (pb->savestate_start_ok) {
+      ss_report(p_resaving ? "restored state readable" : "frozen at its point");
+      printf("state: %.2f ms to the point\n", (clocks - t_cmd) / (double)CLK_HZ * 1000);
+      pfile_bytes = top->ss_words * 2;		// savestate_size, as core_top.v gives it
+      pfile.assign(pfile_bytes, 0); pa = 0; pt = 0; pfirst = true; pchunk_end = P_CHUNK;
+      ps = P_DELAY;
+    }
+    break;
+  case P_DELAY:
+    if (++pt == 20000) { pt = 0; ps = P_READ; }
+    break;
+  case P_READ:
+    // a word: its address, the bus's value a few clocks on (what the read before fetched),
+    // then this read starts
+    if (pt == 0) pb->bridge_addr = 0x40000000 + pa;
+    if (pt == 4 && !pfirst) {
+      uint32_t d = pb->bridge_rd_data; long o = pa - 4;
+      pfile[o] = d >> 24; pfile[o + 1] = d >> 16; pfile[o + 2] = d >> 8; pfile[o + 3] = d;
+    }
+    if (pt == 5) pb->bridge_rd = 1;
+    if (++pt == P_PERIOD) {
+      pt = 0; pfirst = false;
+      if (pa >= pfile_bytes) {
+        st_words.resize(pfile_bytes / 2);
+        for (long i = 0; i < pfile_bytes / 2; i++) st_words[i] = pfile[2 * i] << 8 | pfile[2 * i + 1];
+        if (!ss_write_file()) exit(1);
+        ss_report("read out");
+        printf("state: written %s\n", st_out.c_str());
+        ps = P_DONE;
+      }
+      else if (pa == pchunk_end) { ps = P_STALLING; pt = 0; }
+      else pa += 4;
+    }
+    break;
+  case P_STALLING:
+    // a chunk gone to the card: the next starts with the word just read again
+    if (++pt >= P_STALL) { pt = 0; pfirst = true; pchunk_end += P_CHUNK; ps = P_READ; }
+    break;
+  case P_WRITE:
+    if (pt == 0) {
+      pb->bridge_addr = 0x40000000 + pa;
+      pb->bridge_wr_data = (uint32_t)st_loaded[pa] << 24 | st_loaded[pa + 1] << 16 | st_loaded[pa + 2] << 8 | st_loaded[pa + 3];
+    }
+    if (pt == 5) pb->bridge_wr = 1;
+    if (++pt == P_PERIOD) {
+      pt = 0; pa += 4;
+      if (pa == (long)st_loaded.size()) {
+        ss_report("written in");
+        if (p_wake) ps = P_LRESET;
+        else { pb->savestate_load = 1; ps = P_LACK; }
+      }
+      else if (pa == pchunk_end) { pchunk_end += P_CHUNK; pt = -P_STALL; }
+    }
+    break;
+  case P_LRESET:
+    // the Pocket's reset let go, then Savestate Load
+    if (++pt == 2000) { pb->mpu_reset_n = 1; ss_report("the Pocket's reset let go"); }
+    if (pt == 4000) { pt = 0; pb->savestate_load = 1; ps = P_LACK; }
+    break;
+  case P_LACK:
+    if (pb->savestate_load_ack) { pb->savestate_load = 0; ps = P_LPOLL; }
+    break;
+  case P_LPOLL:
+    if (pb->savestate_load_err) { ss_report("an error (Savestate Load)"); ps = P_DONE; }
+    else if (pb->savestate_load_ok) {
+      ss_report("restored");
+      if (!st_resave.empty()) { p_resaving = true; p_start_save(st_resave); }
+      else ps = P_DONE;
+    }
+    break;
+  default: break;
+  }
+  pb->clk_74a = 1; pb->eval();
+  pb->clk_74a = 0; pb->eval();
+}
+
 void sim_tick(uint32_t n) {
   for (uint32_t i = 0; i < n; i++) {
+    if (pb) { pre_status = top->ss_status; pre_do = top->ss_do; }
     top->clk_sys = 1; top->clk_mem = 1; top->eval();
     clocks++;
-    if (running) ss_step();
+    if (pb) pocket_sys_edge();
+    else if (running) ss_step();
     if (fa) {
       uint8_t snd[10];
       uint64_t lo = top->chip_snd[0] | (uint64_t)top->chip_snd[1] << 32;
@@ -399,6 +539,7 @@ void sim_tick(uint32_t n) {
     top->clk_mem = 0; top->eval();
     top->clk_sys = 0; top->clk_mem = 1; top->eval();
     top->clk_mem = 0; top->eval();
+    if (pb) for (pphase += 74.25e6 / CLK_HZ; pphase >= 1; pphase -= 1) pocket_74a();
   }
 }
 
@@ -407,7 +548,9 @@ uint64_t sim_clocks() { return clocks; }
 // a save state's drive: CORE_INPUT and CORE_OUTPUT's bits, as core_top.v joins them
 bool sim_drv_park() { return top->drv_park; }
 bool sim_drv_state_in() { return top->drv_in; }
-void sim_drv_parked(bool parked, bool restored) { top->drv_parked = parked; top->drv_restored = restored; }
+bool sim_drv_load() { return top->drv_load; }
+// (core_set_parked writes CORE_OUTPUT whole: the settings' bits with the drive's)
+void sim_drv_parked(bool parked, bool restored) { top->drv_parked = parked; top->drv_restored = restored; top->ac_en = set_ac; top->mb128_en = set_mb128; }
 long sim_frame() { return nframe; }
 
 // About what a word costs the MPU on the Pocket: a gpo read and two writes at 74 MHz,
@@ -478,7 +621,9 @@ int main(int argc, char **argv) {
     else if (a == "--state-save") { st_save_at = atol(next().c_str()); st_save = next(); }
     else if (a == "--state-load") st_load = next();
     else if (a == "--load-at") st_load_at = atol(next().c_str());
+    else if (a == "--after") after_n = atol(next().c_str());
     else if (a == "--resave") st_resave = next();
+    else if (a == "--pocket") { if (!pb) pb = new Vpocket; }
     else { fprintf(stderr, "what is %s?\n", a.c_str()); return 2; }
   }
   if (card_path.empty()) { fprintf(stderr, "--card FILE: a system card, or tools/testcard.py's\n"); return 2; }
@@ -486,6 +631,15 @@ int main(int argc, char **argv) {
   if (const char *v = getenv("SIM_SPI_HOLD")) spi_hold = atoi(v);
 
   top = new Vsim_top;
+  if (pb) {
+    if (const char *v = getenv("SIM_POCKET_PERIOD")) P_PERIOD = atoi(v);
+    if (const char *v = getenv("SIM_POCKET_CHUNK")) P_CHUNK = atoi(v);
+    if (const char *v = getenv("SIM_POCKET_STALL")) P_STALL = atoi(v);
+    p_wake = getenv("SIM_POCKET_RESET") != nullptr;
+    pb->clk_74a = 0; pb->clk_sys = 0; pb->mpu_reset_n = 1; pb->eval();
+    // the drive's block is the MPU's RAM from 0xF000 (64K: Main_Bram's 16K words)
+    sim_drive_block = (uint8_t *)&pb->rootp->pocket_bridge__DOT__Main_Bram__DOT__dbram__DOT__altsyncram_component__DOT__mem[0xF000 / 4];
+  }
   frames_txt = fopen((out_dir + "/frames.txt").c_str(), "w");
   if (!frames_txt) { fprintf(stderr, "can't write in %s\n", out_dir.c_str()); return 2; }
   t0 = std::chrono::steady_clock::now();
@@ -494,8 +648,13 @@ int main(int argc, char **argv) {
   top->core_reset = 1;
   // as the firmware's core_reg_update passes them on
   uint32_t core_output = core_output_bits((arcade ? SETTING_ARCADE : 0) | (mb128_on ? SETTING_MB128 : 0));
-  top->ac_en = (core_output & OUTPUT_ARCADE) != 0;
-  top->mb128_en = (core_output & OUTPUT_MB128) != 0;
+  set_ac = (core_output & OUTPUT_ARCADE) != 0;
+  set_mb128 = (core_output & OUTPUT_MB128) != 0;
+  // CORE_OUTPUT is the firmware's: on a wake it is 0 until the firmware first writes it, at its park
+  top->ac_en = p_wake ? 0 : set_ac;
+  top->mb128_en = p_wake ? 0 : set_mb128;
+  top->ss_ac_on = set_ac;		// the Pocket's own, from the start
+  top->ss_mb128_on = set_mb128;
   drive_open(card_path.c_str(), disc_path.c_str(), out_dir.c_str());
   sim_tick(2000);
 
@@ -531,13 +690,25 @@ int main(int argc, char **argv) {
     if (st_loaded.size() < 0x70000 || st_loaded.size() != ((uint32_t)st_loaded[8] << 24 | st_loaded[9] << 16 | st_loaded[10] << 8 | st_loaded[11])) {
       fprintf(stderr, "%s is not a whole state\n", st_load.c_str()); return 1;
     }
+    if (getenv("SIM_POCKET_BADSUM")) st_loaded[0x13] ^= 1;
+    if (getenv("SIM_POCKET_ACFLAG")) st_loaded[7] |= 2;
     SS_WORDS = st_loaded.size() / 2;
     uint32_t size = 0, sum = 0;
     for (size_t i = 0; i + 1 < rom.size(); i += 2) { size += 2; sum += rom[i] << 8 | rom[i + 1]; }
     auto be32 = [&](int o) { return (uint32_t)st_loaded[o] << 24 | st_loaded[o + 1] << 16 | st_loaded[o + 2] << 8 | st_loaded[o + 3]; };
-    if (memcmp(st_loaded.data(), "PCSS", 4) || st_loaded[4] || st_loaded[5] != 1 || be32(0x0C) != size || be32(0x10) != sum) {
+    if (!pb && (memcmp(st_loaded.data(), "PCSS", 4) || st_loaded[4] || st_loaded[5] != 1 || be32(0x0C) != size || be32(0x10) != sum)) {
       fprintf(stderr, "%s is not a state of this system card\n", st_load.c_str()); return 1;
     }
+  }
+  if (pb && p_wake && !st_loaded.empty()) {
+    // the Pocket's launch of a Memory, or a wake: the file written with its reset on, the
+    // console in reset and the firmware not started; then the reset let go, and the
+    // firmware's start (main.cpp's init) holds the console's reset 0.53 s before its loop
+    ss_report("load begun");
+    pb->mpu_reset_n = 0;
+    p_loaded = true; pa = 0; pt = 0; pchunk_end = P_CHUNK; ps = P_WRITE;
+    while (!pb->mpu_reset_n) sim_tick(100);
+    sim_tick(CLK_HZ / 100 * 53);
   }
   top->core_reset = 0;
   running = true;

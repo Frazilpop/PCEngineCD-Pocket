@@ -20,6 +20,7 @@ void RISCFileCacheLoad(const cache_state_t *s);	// and the buffers read again fr
 // the core's side: core.cpp on the Pocket, the simulation's drive.cpp
 bool core_park_asked();		// CORE_INPUT[4]: park
 bool core_state_in();		// CORE_INPUT[5]: a loaded state's words are all in
+bool core_park_load();		// CORE_INPUT[6]: the park is a load's, its block the file's
 void core_park_wait();		// a turn of the park's loop
 void core_set_parked(bool parked, bool restored);	// CORE_OUTPUT[3] and [4]
 // the drive's clock (timer.cpp; drive.cpp): the Pocket's counts milliseconds, the

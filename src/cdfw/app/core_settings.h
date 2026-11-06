@@ -12,9 +12,10 @@ static const uint32_t SETTING_US_CONSOLE = 0x1, SETTING_ARCADE = 0x2, SETTING_FA
 static const uint32_t OUTPUT_ARCADE = 0x2, OUTPUT_MB128 = 0x4;
 
 // Save states (app/state.h): CORE_OUTPUT[3] the drive is parked, [4] and has read a loaded
-// state's block back; CORE_INPUT[4] park, [5] a loaded state's words are all in
+// state's block back; CORE_INPUT[4] park, [5] a loaded state's words are all in, [6] the
+// park is a load's
 static const uint32_t OUTPUT_PARKED = 0x8, OUTPUT_RESTORED = 0x10;
-static const uint32_t INPUT_PARK = 0x10, INPUT_STATE_IN = 0x20;
+static const uint32_t INPUT_PARK = 0x10, INPUT_STATE_IN = 0x20, INPUT_LOAD = 0x40;
 
 static inline uint32_t core_output_bits(uint32_t settings)
 {

@@ -22,6 +22,19 @@ SIM_READ_EARLY=1 bash tools/sim.sh ...             # the fault of firmware befor
 `--press-file FILE` takes lines of `F:buttons[:N]` from a file as the run goes, to steer a menu you can
 only see once you're there: look at the last frame, add a line a few frames on.
 
+**Save states** (docs/SAVESTATES.md, *The proofs*): `--state-save F FILE`, `--state-load FILE
+[--load-at F] [--resave FILE]`, through `main.sv`'s window to `state_engine.sv`. With `--pocket`
+they go through the Pocket's side instead: `pocket_sim.sv`, a Verilator model of its own beside
+`sim_top`, holds `state_bridge.sv`, the MPU's RAM as `controller_rom.v`'s Main_Bram with its block
+read, and `core_top.v`'s remap of the drive's block and its read mux, line for line. `main.cpp`
+gives them `clk_74a` and the Pocket's commands, reads (one word ahead, each chunk's first word read
+again) and writes, as Genesis-Pocket's harness does, and points the firmware's block at that RAM.
+`SIM_POCKET_RESET=1` makes the load a launch's (a wake): the file written with the Pocket's reset
+on before the firmware has run, then the firmware's start with the console's reset held 0.53 s.
+`SIM_POCKET_BADSUM=1` and `SIM_POCKET_ACFLAG=1` spoil the header so the load is refused.
+`SIM_PARK_NO_LOAD=1` is the firmware before 6 Nov 2026's load bit. `tools/state-test.sh` makes the
+runs and compares them (its header says how; `--refuse VAR` for a refused load).
+
 `--press F:buttons[:N]` holds buttons on pad 1 from frame F for N frames (4 by default):
 `up down left right i ii select run`, joined with `+`.
 
@@ -88,7 +101,9 @@ and no check reads it (docs/PLAN.md). MAME's picture is 1088 wide, four across t
    `pcecd.cpp`, the sources that go on the card, unchanged, over `tests/host/host_stubs.h`.
 4. **Verilator** over `sim_top.sv`, `main.sv`, `audio.sv`, `linebuffer.v`, `hps_ext.v`, `color_mix.sv`,
    `arcade.sv`, `mb128.sv`, `mb128_psram.sv`, `adpcm_psram.sv`, `bram.sv` (the memories those hold themselves),
-   `sdram_sim.sv`, `psram_sim.sv` and `main.cpp`.
+   `sdram_sim.sv`, `psram_sim.sv` and `main.cpp`; before it, the Pocket's side as a model of its own
+   (`pocket_sim.sv` with `state_bridge.sv`, `data_loader.sv`, `controller_rom.v` and the framework's
+   `synch_3`, and stand-ins for Intel's `dcfifo` and `altsyncram`), linked in.
 
 ## What the harness does and does not model
 

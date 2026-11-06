@@ -48,6 +48,7 @@ static char bin_dir[CUE_PATH_MAX]; // folder of the files it names, ending in '/
 static char path[CUE_PATH_MAX];
 static uint32_t cue_read_error; // what a read of the CUE failed with
 static uint16_t cue_slot = CUE_SLOT_FIRST;
+static char cue_path_next[CUE_PATH_MAX];	// SetCuePath's, for the next LoadCUE only
 
 // Subcode. MiSTer's drive holds a .sub file open; here it has a slot of its own,
 // as slot 101 changes file with the tracks, and a read of it brings in a run of
@@ -230,7 +231,17 @@ uint16_t cue_t::LoadCUE(int dataslot) {
 	int toc_size;
 	// First we get the Cue File
 	aft.aft_dataslot = cue_slot;
-	GetFileNameDataSlot(&aft);
+	if (cue_path_next[0]) {
+		// a save state's disc, opened in the slot by its path: the slot's name may still be
+		// the one chosen in Core Settings, so the path is taken as the state has it
+		const char *name = strrchr(cue_path_next, '/');
+		name = name ? name + 1 : cue_path_next;
+		memset(aft.aft_filepath, 0, sizeof(aft.aft_filepath));
+		memcpy(aft.aft_filepath, cue_path_next, name - cue_path_next);
+		strcpy(aft.aft_filename, name);
+		cue_path_next[0] = 0;
+	}
+	else GetFileNameDataSlot(&aft);
 	osd_trace_stage('n');
 	toc_size = dataslot_size(cue_slot); // The BINs are in the 101 dataslot
 	if (toc_size == 0) return 100;
@@ -429,6 +440,18 @@ void cue_t::OpenSubcode(const char *cue_name)
 void cue_t::SetCueSlot(uint16_t slot)
 {
 	cue_slot = slot;
+}
+
+// A save state's (app/pcecd.cpp, block_in): its disc reopened by the path it was loaded from
+void cue_t::SetCuePath(const char *path)
+{
+	strncpy(cue_path_next, path, CUE_PATH_MAX - 1);
+	cue_path_next[CUE_PATH_MAX - 1] = 0;
+}
+
+void cue_t::CuePath(char *to, int size)
+{
+	snprintf(to, size, "%s%s", cue_dir, cue_file);
 }
 
 uint16_t cue_t::Load(int dataslot)

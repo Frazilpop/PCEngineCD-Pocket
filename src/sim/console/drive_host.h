@@ -22,8 +22,9 @@ typedef struct {
 extern drive_trace_t drive_trace;
 
 uint32_t RISCGetTimer2(uint32_t fraction);
-// a save state's drive block, as main.cpp reads and writes it for the state file
-extern uint8_t sim_drive_block[2048];
+// a save state's drive block, as main.cpp reads and writes it for the state file: 2K of its
+// own, or with --pocket the MPU's RAM from 0xF000 in the bridge's model
+extern uint8_t *sim_drive_block;
 #define DRIVE_BLOCK sim_drive_block
 bool RISCCheckTimer2(uint32_t time);
 uint8_t HPS_spi_uio_cmd8(uint8_t cmd, uint8_t parm);

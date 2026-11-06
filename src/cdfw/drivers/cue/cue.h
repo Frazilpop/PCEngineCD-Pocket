@@ -153,6 +153,8 @@ public:
 	cue_t();
 	uint16_t Load(int dataslot);
 	void SetCueSlot(uint16_t slot);	// which slot the next Load reads the CUE through
+	void SetCuePath(const char *path);	// a save state's: the next Load's CUE is this path, not the slot's own name
+	void CuePath(char *to, int size);	// the loaded CUE's path, folder and name
 	void Unload();
 	void Reset();
 	void OpenTray();

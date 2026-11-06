@@ -89,13 +89,19 @@ FW_FLAGS=(-std=gnu++17 -O2 -w -Wno-c++11-narrowing -I"$B/fw/stubs" -I"$FW/driver
     rm -f "$B/obj/Vsim_top"	# it reaches the link through LDFLAGS, which make doesn't follow
   fi
 )
+# the Pocket's side of the save states, a model of its own (main.cpp's --pocket)
+verilator --cc --build -j 0 -O3 --x-assign fast --x-initial fast --noassert --timescale 1ns/1ps \
+  -Wno-fatal -Wno-lint -Wno-style --prefix Vpocket --top-module pocket_bridge -Mdir "$B/pocket" -CFLAGS -O2 \
+  "$S/pocket_sim.sv" "$R/../state_bridge.sv" "$R/../data_loader.sv" "$PWD/src/fpga/apf/common.v" "$PWD/src/fpga/MPU/controller_rom.v" \
+  > "$B/verilator-pocket.log" 2>&1 || { grep -E '%Error' "$B/verilator-pocket.log" | head -30; tail -5 "$B/verilator-pocket.log"; exit 1; }
+[ ! -f "$B/obj/Vsim_top" ] || [ "$B/pocket/Vpocket__ALL.a" -ot "$B/obj/Vsim_top" ] || rm -f "$B/obj/Vsim_top"
 echo "Building the simulation (Verilator; some minutes the first time)"
 SRC=("$S/sim_top.sv" "$R/../main.sv" "$R/../audio.sv" "$R/../sys/iir_filter.v" "$R/../linebuffer.v"
      "$R/../state_engine.sv" "$R/hps_ext.v" "$R/color_mix.sv" "$R/arcade.sv" "$R/mb128.sv" "$R/../mb128_psram.sv" "$R/../adpcm_psram.sv" "$S/psram_sim.sv" "$S/bram.sv" "$S/sdram_sim.sv" "$B/gen/pce_top.sv" "$S/main.cpp")
 verilator --cc --exe --build -j 0 -O3 --x-assign fast --x-initial fast --noassert \
   -Wno-fatal -Wno-lint -Wno-style -Wno-MULTIDRIVEN -Wno-COMBDLY -Wno-LATCH -Wno-UNOPTFLAT -Wno-INITIALDLY -Wno-PROCASSWIRE -Wno-MULTITOP \
   --top-module sim_top -Mdir "$B/obj" ${SIM_VFLAGS:-} \
-  -CFLAGS "-O2 -I$S -I$PWD/src/cdfw/app" -LDFLAGS "-lz $B/fw/drive.o $B/fw/sscanf.o $B/fw/vscanf.o $B/fw/stropen.o" -MAKEFLAGS OPT_FAST=-O3 \
+  -CFLAGS "-O2 -I$S -I$PWD/src/cdfw/app -I$B/pocket" -LDFLAGS "-lz $B/fw/drive.o $B/fw/sscanf.o $B/fw/vscanf.o $B/fw/stropen.o $B/pocket/Vpocket__ALL.a" -MAKEFLAGS OPT_FAST=-O3 \
   "${SRC[@]}" > "$B/verilator.log" 2>&1 || { grep -E '%Error' "$B/verilator.log" | head -30; tail -5 "$B/verilator.log"; exit 1; }
 echo "3 of 3 build steps"
 }

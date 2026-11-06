@@ -66,8 +66,15 @@ module sim_top (
 	input  logic [15:0] ss_di,
 	output logic        drv_park,
 	output logic        drv_in,
+	output logic        drv_load,
+	input  logic        ss_mb128_on,		// the settings as the Pocket writes them (core_top.v's ss_setting)
+	input  logic        ss_ac_on,
 	input  logic        drv_parked,
 	input  logic        drv_restored,
+	// what state_bridge.sv checks a header against, and a save's size (main.cpp's --pocket)
+	output logic [31:0] ss_card_size,
+	output logic [31:0] ss_card_sum,
+	output logic [20:0] ss_words,
 	// the chips' own sound, before the filters: {psg_sl, psg_sr, cdda_sl, cdda_sr, adpcm_s}
 	output logic [79:0] chip_snd,
 	// for SIM_SSDBG: the VDC's registers
@@ -183,8 +190,8 @@ module sim_top (
 
 		.SS_SAVE(ss_save), .SS_LOAD(ss_load), .SS_GO(ss_go), .SS_STATUS(ss_status),
 		.SS_ADDR(ss_addr), .SS_RD(ss_rd), .SS_DO(ss_do), .SS_WR(ss_wr), .SS_DI(ss_di),
-		.SS_CARD_SIZE(), .SS_CARD_SUM(), .SS_WORDS(),
-		.SS_DRV_PARK(drv_park), .SS_DRV_IN(drv_in), .SS_DRV_PARKED(drv_parked), .SS_DRV_RESTORED(drv_restored)
+		.SS_CARD_SIZE(ss_card_size), .SS_CARD_SUM(ss_card_sum), .SS_WORDS(ss_words),
+		.SS_DRV_PARK(drv_park), .SS_DRV_IN(drv_in), .SS_DRV_LOAD(drv_load), .SS_MB128_ON(ss_mb128_on), .SS_AC_ON(ss_ac_on), .SS_DRV_PARKED(drv_parked), .SS_DRV_RESTORED(drv_restored)
 	);
 
 	assign dbg_vdc_regs = pce.pce_top.chip.vdc0.regs;

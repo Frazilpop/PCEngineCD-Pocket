@@ -64,9 +64,11 @@ module state_engine (
 	input  wire        freeze_ok,			// the ADPCM memory has nothing in flight
 
 	// the drive, on the MPU (pcecd.cpp): asked to park, it writes its block and waits; on a
-	// load it reads the block back once the words are all in
+	// load it reads the block back once the words are all in. drv_load, with park from a
+	// load's start: the block is the file's, so the drive mustn't write its own over it
 	output reg         drv_park = 0,
 	output reg         drv_in = 0,
+	output wire        drv_load,
 	input  wire        drv_parked,
 	input  wire        drv_restored,
 
@@ -271,6 +273,7 @@ end
 
 assign keep  = st != S_IDLE;
 assign blank = from_load && st != S_IDLE;
+assign drv_load = from_load;
 
 wire [3:0]  w_chain = (w_a - W_CHAINS) >> 6;
 wire [5:0]  w_k     = w_a[5:0];

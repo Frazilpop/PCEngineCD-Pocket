@@ -952,6 +952,15 @@ MPU_AFP_CORE #(
   wire [15:0] ss_do, ss_di;
   wire [31:0] ss_card_size, ss_card_sum;
 
+  // The Arcade System and MB128 settings as the Pocket writes them to 0xF0000004 (the MPU's
+  // mpu_reg_1, bits 1 and 3), for the save states: CORE_OUTPUT has them only once the firmware
+  // runs, and a wake's file comes before that, which refused any state with either and would
+  // have dropped their regions. From interact.json's defaults (Arcade System on) until written.
+  reg   [1:0] ss_setting = 2'b01;			// {MB128, Arcade System}
+  wire        ss_set_mb128, ss_set_ac;
+  always @(posedge clk_74a) if (bridge_wr && bridge_addr == 32'hF0000004) ss_setting <= {bridge_wr_data[3], bridge_wr_data[1]};
+  synch_3 #(.WIDTH(2)) ss_setting_sync (ss_setting, {ss_set_mb128, ss_set_ac}, clk_sys_42_95);
+
   assign savestate_supported   = 1'b0;
   assign savestate_addr        = 32'h40000000;
   assign savestate_size        = {10'd0, ss_words, 1'b0};
@@ -978,8 +987,8 @@ MPU_AFP_CORE #(
       .savestate_load_err(savestate_load_err),
       .card_size(ss_card_size),
       .card_sum(ss_card_sum),
-      .mb128_on(mb128_enable_s),
-      .ac_on(CORE_OUTPUT[1]),
+      .mb128_on(ss_set_mb128),
+      .ac_on(ss_set_ac),
       .ss_words(ss_words),
       .ss_save(ss_save),
       .ss_load(ss_load),
@@ -995,11 +1004,11 @@ MPU_AFP_CORE #(
 
   // the CD Debug overlay's P: {ADPCM cleared, MB128 cleared, ADPCM test words, MB128's}
   // a save state's drive (state_engine.sv, the firmware's pcecd.cpp): CORE_INPUT[4] park,
-  // [5] a load's words all in; CORE_OUTPUT[3] parked, [4] its block read back
-  wire ss_drv_park, ss_drv_in, ss_drv_park_s, ss_drv_in_s, ss_drv_parked_s, ss_drv_restored_s;
-  synch_3 #(.WIDTH(2)) ss_drv_in_sync ({ss_drv_in, ss_drv_park}, {ss_drv_in_s, ss_drv_park_s}, clk_74a);
+  // [5] a load's words all in, [6] the park is a load's; CORE_OUTPUT[3] parked, [4] its block read back
+  wire ss_drv_park, ss_drv_in, ss_drv_load, ss_drv_park_s, ss_drv_in_s, ss_drv_load_s, ss_drv_parked_s, ss_drv_restored_s;
+  synch_3 #(.WIDTH(3)) ss_drv_in_sync ({ss_drv_load, ss_drv_in, ss_drv_park}, {ss_drv_load_s, ss_drv_in_s, ss_drv_park_s}, clk_74a);
   synch_3 #(.WIDTH(2)) ss_drv_out_sync (CORE_OUTPUT[4:3], {ss_drv_restored_s, ss_drv_parked_s}, clk_sys_42_95);
-  assign CORE_INPUT = {26'd0, ss_drv_in_s, ss_drv_park_s, psram_status_s};
+  assign CORE_INPUT = {25'd0, ss_drv_load_s, ss_drv_in_s, ss_drv_park_s, psram_status_s};
 
   wire [15:0] audio_l;
   wire [15:0] audio_r;
@@ -1169,6 +1178,9 @@ MPU_AFP_CORE #(
 		.SS_WORDS					(ss_words),
 		.SS_DRV_PARK				(ss_drv_park),
 		.SS_DRV_IN					(ss_drv_in),
+		.SS_DRV_LOAD				(ss_drv_load),
+		.SS_MB128_ON				(ss_set_mb128),
+		.SS_AC_ON					(ss_set_ac),
 		.SS_DRV_PARKED				(ss_drv_parked_s),
 		.SS_DRV_RESTORED			(ss_drv_restored_s)
   );

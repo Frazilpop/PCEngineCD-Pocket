@@ -169,6 +169,10 @@ module pce (
     output wire [20:0] SS_WORDS,
     output wire        SS_DRV_PARK,
     output wire        SS_DRV_IN,
+    output wire        SS_DRV_LOAD,
+    // the MB128 and Arcade System settings as the Pocket wrote them: what a state holds and is checked against
+    input  wire        SS_MB128_ON,
+    input  wire        SS_AC_ON,
     input  wire        SS_DRV_PARKED,
     input  wire        SS_DRV_RESTORED
 );
@@ -429,6 +433,7 @@ module pce (
 
       .drv_park(SS_DRV_PARK),
       .drv_in(SS_DRV_IN),
+      .drv_load(SS_DRV_LOAD),
       .drv_parked(SS_DRV_PARKED),
       .drv_restored(SS_DRV_RESTORED),
 
@@ -473,8 +478,8 @@ module pce (
       .mb_rd(ss_mb_rd),
       .mb_q(mb128_dout),
 
-      .mb128_on(mb128_ena),
-      .ac_on(AC_EN),
+      .mb128_on(SS_MB128_ON),
+      .ac_on(SS_AC_ON),
       .ac_write(~cart_download & cd_ram_wr & ce_rom),
       .ac_write_a(cd_ram_a),
 

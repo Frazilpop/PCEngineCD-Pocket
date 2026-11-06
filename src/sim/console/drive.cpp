@@ -251,9 +251,12 @@ void drive_clock_set(uint32_t hi, uint32_t lo) { clock_offset = sim_clocks() - (
 
 // a save state's hooks (app/state.h): the park's loop looks at its bit a clock at a time, so
 // the drive goes on at the same clock after a let-go in a saved run and a loaded one
-uint8_t sim_drive_block[2048];
+static uint8_t drive_block[2048];
+uint8_t *sim_drive_block = drive_block;
 bool core_park_asked() { return sim_drv_park(); }
 bool core_state_in() { return sim_drv_state_in(); }
+// SIM_PARK_NO_LOAD: the firmware before 6 Nov 2026's load bit, which wrote its block at every park
+bool core_park_load() { static bool old = getenv("SIM_PARK_NO_LOAD"); return sim_drv_load() && !old; }
 void core_park_wait() { sim_tick(1); }
 void core_set_parked(bool parked, bool restored) { sim_drv_parked(parked, restored); }
 bool RISCCheckTimer2(uint32_t time) { return !time || RISCGetTimer2(0) >= time; }

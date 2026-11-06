@@ -72,6 +72,7 @@ bool old_arcade = 0;
 static uint32_t state_bits = 0;
 bool core_park_asked() { return CORE_INPUT_REGISTOR() & INPUT_PARK; }
 bool core_state_in() { return CORE_INPUT_REGISTOR() & INPUT_STATE_IN; }
+bool core_park_load() { return CORE_INPUT_REGISTOR() & INPUT_LOAD; }
 void core_park_wait() {}
 void core_set_parked(bool parked, bool restored)
 {

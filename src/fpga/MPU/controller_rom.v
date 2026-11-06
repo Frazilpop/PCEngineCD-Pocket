@@ -81,8 +81,9 @@ aft_master		= 0)
 			BRAM_CONTROLL	<= 0;
 			bridge_wr_reg	<= 0;
 			if (bridge_wr && bridge_addr[31:24] == aft_address) begin
+				// (no state 1: the case below always undid it, so a write has only ever been
+				// the clock BRAM_CONTROLL is up, and stays so)
 				iBus_cmd_ready <= 1'b0;
-				mem_status <= 1;
 				BRAM_CONTROLL <= 1;
 				bridge_wr_data_reg <= bridge_wr_data;
 				bridge_addr_reg <= bridge_addr;
@@ -129,6 +130,9 @@ aft_master		= 0)
 //					BRAM_CONTROLL	<= 1;
 //					q_b_reg			<= iBus_rsp_payload_inst;
 //				end
+				// state 0 assigns nothing: a mem_status <= 0 here, after the branches above,
+				// undid their mem_status <= 2 and the block's read never began
+				0 : ;
 				default : begin
 					mem_status		<= 0;				
 				end

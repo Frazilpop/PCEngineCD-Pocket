@@ -100,7 +100,7 @@ static void first_load()
 #define DRIVE_BLOCK ((uint8_t *)0xF000)
 #endif
 #define BLOCK_MAGIC 0x42444350	// PCDB
-#define BLOCK_VERSION 1
+#define BLOCK_VERSION 2
 
 typedef struct {
 	uint32_t magic, version;
@@ -112,6 +112,7 @@ typedef struct {
 	dataslot_type aft;				// the track file the read cache reads from
 	cue_state_t cue;
 	cache_state_t cache;
+	char cue_path[256];				// the disc's CUE, folder and name, to open it again by
 } drive_block_t;
 static_assert(sizeof(drive_block_t) <= 2048, "the drive's block is 2K");
 
@@ -134,6 +135,23 @@ static void block_out(drive_block_t *b, uint32_t hi, uint32_t lo)
 	b->aft = aft;
 	cue.SaveState(&b->cue);
 	RISCFileCacheSave(&b->cache);
+	if (cue.loaded) cue.CuePath(b->cue_path, sizeof(b->cue_path));
+}
+
+// The state's disc, when it isn't the one in: opened by its path through Another disc's
+// slot, as a disc chosen in Core Settings is, so the first slot, which names the save,
+// keeps its file. Its own error box if it can't be.
+static bool reopen(const char *path)
+{
+	static dataslot_type a;
+	while (!dataslot_ready());
+	a.aft_dataslot = CUE_SLOT_OTHER;
+	if (OpenFileNameDataSlot(&a, path)) return false;
+	cue.Unload();
+	cue.SetCueSlot(CUE_SLOT_OTHER);
+	cue.SetCuePath(path);
+	pcecd_set_image(DATASLOT_BRAM(0), DATASLOT_BRAM(1));
+	return cue.loaded;
 }
 
 // A loaded state's block back in: false if it isn't one, or is another disc's
@@ -141,7 +159,8 @@ static bool block_in(const drive_block_t *b)
 {
 	if ((b->magic != BLOCK_MAGIC) || (b->version != BLOCK_VERSION)) return false;
 	if (!cue.loaded) first_load();		// a wake's state can come before the console's first reset
-	if (b->disc_id && (!cue.loaded || (cue.DiscId() != b->disc_id))) return false;
+	bool other = b->disc_id && (!cue.loaded || (cue.DiscId() != b->disc_id));
+	if (other && (!b->cue_path[0] || !reopen(b->cue_path) || (cue.DiscId() != b->disc_id))) return false;
 	// the track file the cache was reading, open again in its slot if another is
 	if (strcmp(aft.aft_filename, b->aft.aft_filename) || strcmp(aft.aft_filepath, b->aft.aft_filepath)) {
 		static char path[sizeof(b->aft.aft_filepath) + sizeof(b->aft.aft_filename)];
@@ -159,6 +178,7 @@ static bool block_in(const drive_block_t *b)
 	last_req = b->last_req;
 	adj = b->adj;
 	cue.LoadState(&b->cue);
+	if (other) cue.SetCueSlot(CUE_SLOT_OTHER);	// the disc is in Another disc's slot now, whichever it was in
 	RISCFileCacheLoad(&b->cache);
 	return true;
 }
@@ -166,14 +186,16 @@ static bool block_in(const drive_block_t *b)
 // Asked to park: at the top of a pass, with any read ahead landed, the drive writes its
 // block and waits, its clock standing still. A load's words all in, it reads the block
 // back. A block it can't take (another disc, or none) leaves the tray open, so the game
-// sees no disc rather than the wrong one.
+// sees no disc rather than the wrong one. A load's park writes no block: the file's may
+// be in already (always, on a wake, where the file comes before the firmware starts).
 static void park()
 {
 	drive_block_t *b = (drive_block_t *)DRIVE_BLOCK;
 	uint32_t hi, lo;
+	bool load = core_park_load();
 	while (!dataslot_ready());
 	drive_clock_get(&hi, &lo);
-	block_out(b, hi, lo);
+	if (!load) block_out(b, hi, lo);
 	core_set_parked(true, false);
 	bool restored = false;
 	while (core_park_asked()) {
