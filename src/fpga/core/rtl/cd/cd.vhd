@@ -250,7 +250,12 @@ architecture rtl of cd is
 	signal SF_D					: std_logic_vector(7 downto 0);
 	signal SF_WR, SF_RD, SF_CLR : std_logic;
 
+	-- (the save state's chain reads it, and VHDL-93 can't read an out port)
+	signal ADRAM_RD_R : std_logic;
+
 begin
+
+	ADRAM_RD <= ADRAM_RD_R;
 
 	SS_V(7 downto 0) <= SCSI_DBI;
 	SS_V(8) <= SCSI_ACK_N;
@@ -303,7 +308,7 @@ begin
 	SS_V(182 downto 178) <= std_logic_vector(DRAM_CLK_CNT);
 	SS_V(183) <= DRAM_CLKEN;
 	SS_V(185 downto 184) <= std_logic_vector(DRAM_SLOT_CNT);
-	SS_V(186) <= ADRAM_RD;
+	SS_V(186) <= ADRAM_RD_R;
 	SS_V(195 downto 187) <= std_logic_vector(to_unsigned(M5205_CLK_CNT, 9));
 	SS_V(196) <= M5205_CLK;
 	SS_V(198 downto 197) <= std_logic_vector(CD_BYTE_CNT);
@@ -854,13 +859,13 @@ begin
 			DRAM_CLK_CNT <= (others => '0');
 			DRAM_CLKEN <= '0';
 			DRAM_SLOT_CNT <= (others => '0');
-			ADRAM_RD <= '0';
+			ADRAM_RD_R <= '0';
 		elsif rising_edge(CLK) then
 			if EN = '1' and SS_HOLD = '0' then
 				DRAM_CLKEN <= '0';
-				ADRAM_RD <= '0';
+				ADRAM_RD_R <= '0';
 				if DRAM_CLK_CNT = 9-1 and DRAM_SLOT = SLOT_READ then
-					ADRAM_RD <= '1';
+					ADRAM_RD_R <= '1';
 				end if;
 				DRAM_CLK_CNT <= DRAM_CLK_CNT + 1;
 				if DRAM_CLK_CNT = 18-1 then
@@ -876,7 +881,7 @@ begin
 				DRAM_CLK_CNT <= unsigned(SS_N(182 downto 178));
 				DRAM_CLKEN <= SS_N(183);
 				DRAM_SLOT_CNT <= unsigned(SS_N(185 downto 184));
-				ADRAM_RD <= SS_N(186);
+				ADRAM_RD_R <= SS_N(186);
 			end if;
 		end if;
 	end process;

@@ -73,6 +73,7 @@ static uint64_t t_cmd;
 static FILE *fa;				// after.txt
 static long rel_frame;
 static uint32_t snd_crc;
+static uint32_t snd_adpcm, snd_cdda;		// clocks of the frame with ADPCM, and CD audio, not silent
 static std::vector<uint8_t> card_bytes;
 
 void sim_tick(uint32_t n);
@@ -248,9 +249,9 @@ static void frame_done() {
   }
   // after a let-go, the frames from the first whole one: the one it fell in is part before
   if (fa) {
-    if (rel_frame >= 0) { fprintf(fa, "%ld %dx%d %08x %08x\n", rel_frame, w, h, hash, snd_crc); fflush(fa); }
+    if (rel_frame >= 0) { fprintf(fa, "%ld %dx%d %08x %08x %u %u\n", rel_frame, w, h, hash, snd_crc, snd_adpcm, snd_cdda); fflush(fa); }
     rel_frame++;
-    snd_crc = 0;
+    snd_crc = 0; snd_adpcm = 0; snd_cdda = 0;
   }
   bool save = (every > 0 && nframe % every == 0) || nframe == frames
               || saves.find("," + std::to_string(nframe) + ",") != std::string::npos;
@@ -368,6 +369,8 @@ void sim_tick(uint32_t n) {
       for (int k = 0; k < 8; k++) snd[k] = lo >> (8 * k);
       snd[8] = top->chip_snd[2]; snd[9] = top->chip_snd[2] >> 8;
       snd_crc = crc32(snd_crc, snd, 10);
+      if (top->chip_snd[0] & 0xFFFF) snd_adpcm++;
+      if ((top->chip_snd[0] >> 16) || (top->chip_snd[1] & 0xFFFF)) snd_cdda++;
     }
 
     // what a game asks of the MB128: rtl/mb128.sv's states 1, the ident, and 6 and 8, a read and a write

@@ -156,12 +156,17 @@ architecture rtl of SCSI is
 		end case;
 	end function;
 
+	-- (the save state's chain reads it, and VHDL-93 can't read an out port)
+	signal DBO_R : std_logic_vector(7 downto 0);
+
 begin
+
+	DBO <= DBO_R;
 
 	SS_Q(7 downto 0) <= FIFO_D;
 	SS_Q(8) <= FIFO_WR_REQ;
 	SS_Q(9) <= CD_WR_OLD;
-	SS_Q(17 downto 10) <= DBO;
+	SS_Q(17 downto 10) <= DBO_R;
 	SS_Q(18) <= BSY_Nr;
 	SS_Q(19) <= MSG_Nr;
 	SS_Q(20) <= CD_Nr;
@@ -256,7 +261,7 @@ begin
 
 	process( CLK, RESET_N ) begin
 		if RESET_N = '0' then
-			DBO <= (others => '0');
+			DBO_R <= (others => '0');
 			BSY_Nr <= '1';
 			MSG_Nr <= '1';
 			CD_Nr <= '1';
@@ -322,7 +327,7 @@ begin
 																		-- the Sailor Moon hang issue
 								STAT_COUNT <= (others => '0');
 								STAT_PEND <= '0';
-								DBO <= STATUS;
+								DBO_R <= STATUS;
 								BSY_Nr <= '0';
 								MSG_Nr <= '1';
 								CD_Nr <= '0';
@@ -331,7 +336,7 @@ begin
 								SP <= SP_STAT_START;
 							end if;
 						elsif EMPTY = '0' then
-							DBO <= FIFO_Q;
+							DBO_R <= FIFO_Q;
 							BSY_Nr <= '0';
 							MSG_Nr <= '1';
 							CD_Nr <= '1';
@@ -398,7 +403,7 @@ begin
 
 					when SP_STAT_HOLD =>
 						if (DELAY_COUNT = 0) then
-							DBO <= MESSAGE;
+							DBO_R <= MESSAGE;
 							BSY_Nr <= '0';
 							MSG_Nr <= '0';
 							CD_Nr <= '0';
@@ -443,7 +448,7 @@ begin
 					when SP_DATAIN_END =>
 						if REQ_Nr = '1' and ACK_N = '1' then
 							if EMPTY = '0' then
-								DBO <= FIFO_Q;
+								DBO_R <= FIFO_Q;
 								REQ_Nr <= '0';
 								FIFO_RD_REQ <= '1';
 								SP <= SP_DATAIN_START;
@@ -479,7 +484,7 @@ begin
 			end if;
 			end if;
 			if SS_WE = '1' then
-				DBO <= SS_D(17 downto 10);
+				DBO_R <= SS_D(17 downto 10);
 				BSY_Nr <= SS_D(18);
 				MSG_Nr <= SS_D(19);
 				CD_Nr <= SS_D(20);

@@ -130,7 +130,12 @@ signal PAL_A		: std_logic_vector(8 downto 0);
 signal PAL_DI		: std_logic_vector(8 downto 0);
 signal PAL_WE		: std_logic;
 
+	-- (the save state's chain reads it, and VHDL-93 can't read an out port)
+	signal DO_R : std_logic_vector(7 downto 0);
+
 begin
+
+	DO <= DO_R;
 
 TOP_BL_LINES <= TOP_BL_LINES_E when RVBL = '1' else TOP_BL_LINES_E+4;
 DISP_LINES   <= DISP_LINES_E   when RVBL = '1' else DISP_LINES_E-11;
@@ -161,7 +166,7 @@ SS_IDLE <= '1' when CTRL = CTRL_IDLE and RAM_WE = '0' else '0';
 SS_V(7 downto 0) <= CR;
 SS_V(16 downto 8) <= RAM_A;
 SS_V(25 downto 17) <= RAM_DI;
-SS_V(33 downto 26) <= DO;
+SS_V(33 downto 26) <= DO_R;
 SS_V(36 downto 34) <= PREV_A;
 SS_V(38 downto 37) <= "00" when CTRL = CTRL_IDLE else "01" when CTRL = CTRL_WAIT else "10";
 SS_V(39) <= RAM_WE;
@@ -210,12 +215,12 @@ begin
 					-- CPU Read
 					PREV_A <= A;
 					CTRL <= CTRL_WAIT;
-					DO <= x"FF";
+					DO_R <= x"FF";
 					case A is
 					when "100" =>
-						DO <= RAM_DO(7 downto 0);
+						DO_R <= RAM_DO(7 downto 0);
 					when "101" =>
-						DO <= "1111111" & RAM_DO(8);
+						DO_R <= "1111111" & RAM_DO(8);
 						CTRL <= CTRL_INCR;
 					when others => null;
 					end case;
@@ -246,7 +251,7 @@ begin
 			CR <= SS_N(7 downto 0);
 			RAM_A <= SS_N(16 downto 8);
 			RAM_DI <= SS_N(25 downto 17);
-			DO <= SS_N(33 downto 26);
+			DO_R <= SS_N(33 downto 26);
 			PREV_A <= SS_N(36 downto 34);
 			case SS_N(38 downto 37) is
 				when "00" => CTRL <= CTRL_IDLE;

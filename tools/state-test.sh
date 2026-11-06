@@ -52,7 +52,8 @@ touch "$D/save/after.txt" "$D/load/after.txt"
 n=$(wc -l < "$D/load/after.txt" | tr -d ' '); m=$(wc -l < "$D/save/after.txt" | tr -d ' ')
 [ "$m" -lt "$n" ] && n=$m
 paste -d' ' <(head -n "$n" "$D/save/after.txt") <(head -n "$n" "$D/load/after.txt") > "$D/compare.txt"
-read p snd first <<< "$(awk '{ if ($3==$7) p++; if ($4==$8) s++; if (f=="" && ($3!=$7 || $4!=$8)) f=$1 } END { print p+0, s+0, (f=="" ? "-" : f) }' "$D/compare.txt")"
+read p snd first ad cd <<< "$(awk '{ if ($3==$9) p++; if ($4==$10) s++; if (f=="" && ($3!=$9 || $4!=$10)) f=$1; if ($5) a++; if ($6) c++ } END { print p+0, s+0, (f=="" ? "-" : f), a+0, c+0 }' "$D/compare.txt")"
 echo "after letting go: $n frames, the picture the same in $p, the sound in $snd (the first that differs: $first)"
+echo "  (ADPCM sounding in $ad of them, CD audio in $cd)"
 [ "$n" -ge "$N" ] && [ "$p" -eq "$n" ] && [ "$snd" -eq "$n" ] || ok=0
 [ $ok -eq 1 ] && echo "$NAME: ok" || echo "$NAME: FAILED"

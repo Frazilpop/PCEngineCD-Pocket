@@ -113,12 +113,17 @@ architecture rtl of HUC6280 is
 	signal SS_V, SS_N		: std_logic_vector(63 downto 0);
 	signal SS_PAD			: std_logic_vector(10 downto 0);
 
+	-- (the save state's chain reads it, and VHDL-93 can't read an out port)
+	signal O_R : std_logic_vector(7 downto 0);
+
 begin
+
+	O <= O_R;
 
 	RSTI_N <= RST_N and not SS_RST;
 	IO_CEG <= IO_CE and not SS_HOLD;
 
-	SS_V(7 downto 0) <= O;
+	SS_V(7 downto 0) <= O_R;
 	SS_V(10 downto 8) <= INT_MASK_PRE;
 	SS_V(13 downto 11) <= INT_MASK;
 	SS_V(20 downto 14) <= TMR_LATCH;
@@ -284,15 +289,15 @@ begin
 	process(CLK, RSTI_N)
 	begin
 		if RSTI_N = '0' then
-			O <= (others=>'0');
+			O_R <= (others=>'0');
 		elsif rising_edge(CLK) then
 			if EN = '1' then
 				if IOP_SEL = '1' and CPU_WE_N = '0' then
-					O <= CPU_DO;
+					O_R <= CPU_DO;
 				end if; 
 			end if; 
 			if SS_SHIFT = '1' then
-				O <= SS_N(7 downto 0);
+				O_R <= SS_N(7 downto 0);
 			end if;
 		end if;
 	end process;

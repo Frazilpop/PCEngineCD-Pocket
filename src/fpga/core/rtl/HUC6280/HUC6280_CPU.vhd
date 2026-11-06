@@ -98,7 +98,12 @@ architecture rtl of HUC6280_CPU is
 	signal SS_V, SS_N		: std_logic_vector(SS_LEN-1 downto 0);
 	signal SS_PAD			: std_logic_vector(8 downto 0);
 
+	-- (the save state's chain reads it, and VHDL-93 can't read an out port)
+	signal CS_R : std_logic;
+
 begin
+
+	CS <= CS_R;
 	
 	EN <= RDY and CE;
 
@@ -112,7 +117,7 @@ begin
 		SS_V(63+8*i downto 56+8*i) <= MPR(i);
 	end generate;
 	SS_V(127 downto 120) <= MPR_LAST;
-	SS_V(134 downto 128) <= IRQT_INT & IRQ2_INT & IRQ1_INT & NMI_INT & RES_INT & GOT_INT & CS;
+	SS_V(134 downto 128) <= IRQT_INT & IRQ2_INT & IRQ1_INT & NMI_INT & RES_INT & GOT_INT & CS_R;
 	SS_V(143 downto 135) <= SS_PAD;
 	SS_N <= SS_V(SS_LEN-17 downto 0) & SS_SI;
 	SS_SO <= SS_V(SS_LEN-1 downto SS_LEN-16);
@@ -621,15 +626,15 @@ begin
 	process(CLK, RST_N)
 	begin
 		if RST_N = '0' then
-			CS <= '0';
+			CS_R <= '0';
 		elsif rising_edge(CLK) then
 			if EN = '1' then
 				if IR(6 downto 0) = "1010100" and STATE = "00001" then
-					CS <= IR(7);
+					CS_R <= IR(7);
 				end if; 
 			end if; 
 			if SS_SHIFT = '1' then
-				CS <= SS_N(128);
+				CS_R <= SS_N(128);
 			end if;
 		end if;
 	end process;
