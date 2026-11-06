@@ -19,9 +19,11 @@
 #
 # A bitstream older than BITSTREAM_NOT_BEFORE isn't deployed: each Mac builds its
 # own, so one can have this firmware and a bitstream from before a change between
-# the two. Set it when such a change goes in. The last, 4 Nov 2026: the save slot
-# holds the MB128 in the PSRAM, and this firmware makes it 130K when asked, which an
-# older bitstream would fill with nonsense.
+# the two. Set it when such a change goes in. The last, 6 Nov 2026: the first
+# bitstream that offers save states, whose engine tells this firmware a park is for
+# a load (CORE_INPUT[6]); with an older one the Pocket offers no Memories at all.
+# Before it, 4 Nov 2026: the save slot holds the MB128 in the PSRAM, and this
+# firmware makes it 130K when asked, which an older bitstream would fill with nonsense.
 #
 # One copy to the card at a time, under /tmp/pocket-card.lock (shared with the
 # other cores' deploy scripts). Nothing ejects the card.
@@ -34,7 +36,7 @@ DIST="$REPO/dist"
 BIN="$DIST/Cores/$CORE/bitstream.rbf_r"
 FW="$DIST/Assets/pcecd/$CORE/pce_mpu_bios.bin"
 RECORD="$REPO/build/deployed.txt"
-BITSTREAM_NOT_BEFORE="2026-11-04 15:05"
+BITSTREAM_NOT_BEFORE="2026-11-06 14:15"
 [ -f "$BIN" ] || { echo "no $BIN - run tools/build.sh first"; exit 1; }
 
 VOL="" STATUS=0

@@ -944,8 +944,8 @@ MPU_AFP_CORE #(
 
   // ---- save states (docs/SAVESTATES.md): the Pocket's bridge to main.sv's state_engine.sv ----
   // The file is the 0x4 window, 0x40000000. Its bytes 0x800 to 0xFFF are the drive's block, the
-  // MPU's RAM from 0xF000, read and written there through MPU_AFP_CORE. Not yet offered to the
-  // Pocket (savestate_supported 0): the first build that offers it is the one played on it.
+  // MPU's RAM from 0xF000, read and written there through MPU_AFP_CORE. Offered to the Pocket
+  // since 6 Nov 2026, with core.json's sleep_supported.
   wire        ss_save, ss_load, ss_go, ss_rd, ss_wr;
   wire  [1:0] ss_status;
   wire [20:0] ss_addr, ss_words;
@@ -961,7 +961,7 @@ MPU_AFP_CORE #(
   always @(posedge clk_74a) if (bridge_wr && bridge_addr == 32'hF0000004) ss_setting <= {bridge_wr_data[3], bridge_wr_data[1]};
   synch_3 #(.WIDTH(2)) ss_setting_sync (ss_setting, {ss_set_mb128, ss_set_ac}, clk_sys_42_95);
 
-  assign savestate_supported   = 1'b0;
+  assign savestate_supported   = 1'b1;
   assign savestate_addr        = 32'h40000000;
   assign savestate_size        = {10'd0, ss_words, 1'b0};
   assign savestate_maxloadsize = 32'h00290000;
