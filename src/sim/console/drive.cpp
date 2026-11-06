@@ -99,7 +99,7 @@ static void bridge_start(int slot, uint32_t at, uint32_t offset, uint32_t length
 
 static void bridge_update()
 {
-	if (bridge.busy && sim_clocks() >= bridge.done) {
+	if (bridge.busy && sim_clocks() >= bridge.done && !sim_pocket_hold()) {
 		memcpy(fake_scratch + bridge.at, bridge.bytes.data(), bridge.bytes.size());
 		bridge.busy = false;
 		if (queued.on) {
@@ -190,6 +190,7 @@ int GetFileNameDataSlot(dataslot_type *a)
 int OpenFileNameDataSlot(dataslot_type *a, const char *s)
 {
 	bridge_wait();
+	while (sim_pocket_hold()) sim_tick(16);
 	split_path(a, s);
 	// as the bridge does, the name goes through the bottom of the scratch RAM
 	memset(fake_scratch, 0, 264);

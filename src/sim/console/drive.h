@@ -5,6 +5,7 @@
 
 // main.cpp's: time passes only here, so the drive's time is the console's.
 void sim_tick(uint32_t clocks);			// that many clocks of clk_sys, 42.95 MHz
+bool sim_pocket_hold();				// SIM_POCKET_HOLD: the Pocket answering no read now
 uint64_t sim_clocks();					// clocks since power-on
 long sim_frame();						// frames so far
 void sim_io_enable(bool on);			// the MPU's IO_UIO

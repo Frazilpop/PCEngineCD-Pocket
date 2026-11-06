@@ -18,6 +18,7 @@ typedef struct {
 	uint32_t bios_size;
 	bool bios_us;
 	uint32_t bios_error;
+	uint32_t park_asks, parks, park_missed, park_late, wait_max, restores, restore_refused;
 } drive_trace_t;
 extern drive_trace_t drive_trace;
 

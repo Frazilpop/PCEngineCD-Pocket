@@ -158,6 +158,7 @@ static bool reopen(const char *path)
 static bool block_in(const drive_block_t *b)
 {
 	if ((b->magic != BLOCK_MAGIC) || (b->version != BLOCK_VERSION)) return false;
+	while (!dataslot_ready());			// a read the drive had under way when it parked
 	if (!cue.loaded) first_load();		// a wake's state can come before the console's first reset
 	bool other = b->disc_id && (!cue.loaded || (cue.DiscId() != b->disc_id));
 	if (other && (!b->cue_path[0] || !reopen(b->cue_path) || (cue.DiscId() != b->disc_id))) return false;
@@ -183,28 +184,36 @@ static bool block_in(const drive_block_t *b)
 	return true;
 }
 
-// Asked to park: at the top of a pass, with any read ahead landed, the drive writes its
-// block and waits, its clock standing still. A load's words all in, it reads the block
-// back. A block it can't take (another disc, or none) leaves the tray open, so the game
-// sees no disc rather than the wrong one. A load's park writes no block: the file's may
-// be in already (always, on a wake, where the file comes before the firmware starts).
+// Asked to park: at the top of a pass the drive writes its block and waits, its clock
+// standing still. A load's words all in, it reads the block back. A block it can't take
+// (another disc, or none) leaves the tray open, so the game sees no disc rather than the
+// wrong one. A load's park writes no block: the file's may be in already (always, on a
+// wake, where the file comes before the firmware starts).
+//
+// A read ahead still under way is not waited for. On the Pocket a Memory made in play
+// failed every time and one made with the drive quiet was made (6 Nov 2026): the Pocket
+// is taken to answer none of the core's reads while it makes or loads a Memory, so a
+// park that waited for one never came. The block's cache tags already say what that read
+// brings; the saving run has it land after the let-go, and a load reads both buffers
+// again anyway, once the Pocket has answered the load.
 static void park()
 {
 	drive_block_t *b = (drive_block_t *)DRIVE_BLOCK;
 	uint32_t hi, lo;
 	bool load = core_park_load();
-	while (!dataslot_ready());
 	drive_clock_get(&hi, &lo);
 	if (!load) block_out(b, hi, lo);
 	core_set_parked(true, false);
 	bool restored = false;
 	while (core_park_asked()) {
 		if (!restored && core_state_in()) {
+			drive_trace.restores++;
 			if (block_in(b)) {
 				hi = b->clock_hi;
 				lo = b->clock_lo;
 			}
 			else {
+				drive_trace.restore_refused++;
 				cue.OpenTray();
 			}
 			restored = true;
@@ -241,8 +250,13 @@ void pcecd_poll()
 	// set counted from power-on, and the drive ran a tick a pass until it had caught up.
 	if (!poll_timer) poll_timer = RISCGetTimer2(13);
 
+	// A tick waits for no read still under way: it is put off to a later pass, which gets
+	// to the top, where a save state's park is looked for. A tick's wait on the card comes
+	// before it has changed anything, so this is the wait it would have had, moved out to
+	// here. On the Pocket the card may not be answered while a Memory is made, and maybe
+	// while the menu is up: a tick waiting inside then never let the drive park.
 	// mainprintf("milli seconds %0.8x \r\n", poll_timer);
-	if (RISCCheckTimer2(poll_timer))
+	if (RISCCheckTimer2(poll_timer) && dataslot_ready())
 	{
 		// mainprintf("milli seconds done %0.8x \r\n", poll_timer);
 	    // ResetTimer2();

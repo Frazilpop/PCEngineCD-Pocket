@@ -45,7 +45,11 @@ void osd_display_error_apf(){
 
 void osd_display_info(){
   if ((error_system == 0) && DEBUG_OVERLAY_ON){
-    sprintf (s, "Delay: %d E:%d", timer_wait_value, drive_trace.bios_error);
+    // E the system card's read; SS parks asked/made/taken back, K the last one's lateness
+    // and W the longest wait on the card (ms), L loaded blocks/refused
+    sprintf (s, "E%d SS %d/%d/%d K%d W%d L%d/%d", drive_trace.bios_error, drive_trace.park_asks,
+      drive_trace.parks, drive_trace.park_missed, drive_trace.park_late, drive_trace.wait_max,
+      drive_trace.restores, drive_trace.restore_refused);
     OsdWrite(s);
     OsdUpdate(1);
     OsdClear();
@@ -79,6 +83,45 @@ void osd_display_info(){
   else {
     OsdDisable();
   }
+}
+
+// Every look at a command to the Pocket that isn't done yet: how long it has waited, and
+// whether a save state has asked the drive to park meanwhile. Shows whether the Pocket
+// answers the core's reads while it makes or loads a Memory, or while its menu is up.
+bool core_park_asked();
+static bool card_waiting = false, ask_seen = false;
+static uint32_t card_wait_since, ask_at;
+void drive_trace_card_wait(bool done){
+  uint32_t now = GetTimer();
+  if (ask_seen && !core_park_asked()) {
+    ask_seen = false;
+    drive_trace.park_missed++;
+    drive_trace.park_late = now - ask_at;
+  }
+  if (done) {
+    card_waiting = false;
+    return;
+  }
+  if (!card_waiting) {
+    card_waiting = true;
+    card_wait_since = now;
+  }
+  else if (now - card_wait_since > drive_trace.wait_max) drive_trace.wait_max = now - card_wait_since;
+  if (!ask_seen && core_park_asked()) {
+    ask_seen = true;
+    ask_at = now;
+    drive_trace.park_asks++;
+  }
+}
+
+void drive_trace_parked(){
+  if (ask_seen) drive_trace.park_late = GetTimer() - ask_at;
+  else {
+    drive_trace.park_asks++;
+    drive_trace.park_late = 0;
+  }
+  ask_seen = false;
+  drive_trace.parks++;
 }
 
 // Drawn at once: if the next step hangs, the screen still says which step it was.

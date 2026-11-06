@@ -50,7 +50,14 @@ typedef struct {
   uint32_t bios_size;   // the system card's size in the slot table
   bool bios_us;
   uint32_t bios_error;  // what reading the system card from the slot answered
+  // save states (pcecd.cpp's park): parks asked of the drive, made, and asked but taken
+  // back unmade; the last park's lateness in ms, from its ask seen in a wait on the card
+  // (0 if seen at the top of a pass); the longest wait on the card in ms; loaded blocks
+  // read back, and of those refused (the tray left open)
+  uint32_t park_asks, parks, park_missed, park_late, wait_max, restores, restore_refused;
 } drive_trace_t;
 extern drive_trace_t drive_trace;
 void osd_trace_stage(char stage);
+void drive_trace_card_wait(bool done);  // apf.cpp, each look at a command to the Pocket
+void drive_trace_parked();              // core.cpp, as the drive parks
 #endif

@@ -13,8 +13,9 @@
 // Loading: the file comes before Savestate Load. Its header is checked as it comes: the
 // magic, the version, this system card's size and sum, and the MB128 and Arcade Card as the
 // settings have them. If it matches, the console stops and the words go into the chips as
-// they come; Savestate Load then lets it go. A file that does not match leaves the game
-// running, and Savestate Load answers with an error.
+// they come; Savestate Load is answered ok then, and the engine lets it go once the drive
+// has its block back. A file that does not match leaves the game running, and Savestate
+// Load answers with an error.
 //
 // Words are big-endian in the file. The bridge's words are as data_loader's and
 // data_unloader's are with bridge_endian_little 0: {first word, second word}.
@@ -204,7 +205,9 @@ always @(posedge clk_sys) begin
     if (start_s & ~start_d) begin
         ack_dly_s <= 3'd4;
         start_ok <= 0; start_err <= 0; load_ok <= 0; load_err <= 0;
-        if ((st == B_IDLE && (ss_status == 2'd0 || ss_status == 2'd3)) || (st == B_LRUN && ss_status == 2'd2)) begin
+        // after a load's ok the drive may still be reading its block back (B_LRUN, busy):
+        // the engine keeps the save until it has, and B_SEEK waits for its ok
+        if ((st == B_IDLE && (ss_status == 2'd0 || ss_status == 2'd3)) || (st == B_LRUN && (ss_status == 2'd1 || ss_status == 2'd2))) begin
             start_busy <= 1;
             ss_save <= 1;
             tmr <= 0;
@@ -346,13 +349,18 @@ always @(posedge clk_sys) begin
         end
 
     B_LGO:
+        // ok once the file is in and its header matched, not once the drive has its block
+        // back: the drive reads the card for that, and the Pocket may answer no read of the
+        // core's until its load is answered (on a wake its reset may hold the drive too).
+        // The engine lets go when the drive is ready, the ok or no.
         if (tmr >= 29'd4) begin
-            if (ss_status == 2'd3 || (ss_status == 2'd2 && ~ld_last)) begin
-                load_busy <= 0; load_err <= 1;
+            load_busy <= 0;
+            if (ss_status == 2'd3 || ~ld_last) begin
+                load_err <= 1;
                 st <= ss_status == 2'd3 ? B_IDLE : B_LRUN;
             end
-            else if (ss_status == 2'd2 || ss_status == 2'd0) begin
-                load_busy <= 0; load_ok <= 1;
+            else begin
+                load_ok <= 1;
                 st <= B_LRUN;
             end
         end

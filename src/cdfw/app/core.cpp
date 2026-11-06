@@ -33,6 +33,8 @@
 #include "core.h"
 #include "core_settings.h"
 #include "state.h"
+
+void drive_trace_parked();	// osd_menu.cpp
 #include "riscprintf.h"
 #include "hardware.h"
 #include "apf.h"
@@ -76,6 +78,7 @@ bool core_park_load() { return CORE_INPUT_REGISTOR() & INPUT_LOAD; }
 void core_park_wait() {}
 void core_set_parked(bool parked, bool restored)
 {
+	if (parked && !restored) drive_trace_parked();
 	state_bits = (parked ? OUTPUT_PARKED : 0) | (restored ? OUTPUT_RESTORED : 0);
 	CORE_OUTPUT_REGISTOR() = core_output_bits(AFP_REGISTOR(1)) | state_bits;
 }

@@ -29,6 +29,8 @@
 #include "apf.h"
 #include "riscprintf.h"
 #include "timer.h"
+
+void drive_trace_card_wait(bool done);	// osd_menu.cpp
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -38,8 +40,13 @@
 // bool file_error_enabled;
 // int file_error_code;
 
+// DONE is 0 from power-on until the first command is done, so with no command issued yet
+// nothing is under way: a wake's park and its block's read come before any.
+static bool apf_issued = false;
 bool dataslot_ready(){
   int apf_codes = READ_TARGET_DATASLOT_CONTROL(0);
+  if (!apf_issued) return true;
+  drive_trace_card_wait(apf_codes & APF_DONE);
   if ((apf_codes & APF_ERROR) > 0) mainprintf("\033[38;1;5mCheck codes %0.4X\033[0m\r\n", (apf_codes & APF_ERROR));
   // if (!(apf_codes & APF_DONE)) mainprintf("\033[38;1;5mwe are waiting\033[0m\r\n");
   // file_error_enabled = 1;
@@ -98,6 +105,7 @@ static uint32_t dataslot_result()
   do
   {
     apf_codes = READ_TARGET_DATASLOT_CONTROL(0);
+    drive_trace_card_wait(apf_codes & APF_DONE);
   } while (!(apf_codes & APF_DONE));
   return (apf_codes & APF_ERROR);
 }
@@ -114,7 +122,7 @@ uint32_t dataslot_read(uint16_t dataslot, uint32_t address, uint32_t offset, uin
   if (length > 0)WRITE_TARGET_DATASLOT_LENGTH(0) = length;
   else return(0);
   WRITE_TARGET_DATASLOT_OFFSET(0) = offset;
-  WRITE_TARGET_DATASLOT_CONTROL(0) = TARGET_DATASLOT_READ_REG;
+  WRITE_TARGET_DATASLOT_CONTROL(0) = TARGET_DATASLOT_READ_REG; apf_issued = true;
   mainprintf("APF read: %d, %0.4x, %0.4x, %d\r\n", dataslot, WRITE_TARGET_DATASLOT_BRIDGE_ADD(0), offset, length);
   uint32_t error = dataslot_result();
   if (error)
@@ -138,7 +146,7 @@ uint32_t dataslot_write(uint16_t dataslot, uint32_t address, uint32_t offset, ui
   if (length > 0)WRITE_TARGET_DATASLOT_LENGTH(0) = length;
   else return(0);
   WRITE_TARGET_DATASLOT_OFFSET(0) = offset;
-  WRITE_TARGET_DATASLOT_CONTROL(0) = TARGET_DATASLOT_WRITE_REG;
+  WRITE_TARGET_DATASLOT_CONTROL(0) = TARGET_DATASLOT_WRITE_REG; apf_issued = true;
   int apf_codes;
 	do
 	{
@@ -170,7 +178,7 @@ uint32_t dataslot_read_lba_set_fast(uint16_t dataslot, uint32_t address, uint32_
   READ_TARGET_DATASLOT_OFFSET(0) = offset << 9;
   if (length > 0)READ_TARGET_DATASLOT_LENGTH(0) = length;
   else return(0);
-  READ_TARGET_DATASLOT_CONTROL(0) = TARGET_DATASLOT_READ_REG;
+  READ_TARGET_DATASLOT_CONTROL(0) = TARGET_DATASLOT_READ_REG; apf_issued = true;
 
   mainprintf("\033[38;1;6mREAD_TARGET_DATASLOT_SETUP fast %0.4x, %0.4x, %0.4x, %d \033[0m\r\n", offset, address, length, dataslot);
 
@@ -202,7 +210,7 @@ uint32_t dataslot_read_lba(uint32_t length)
 {
   if (length > 0)READ_TARGET_DATASLOT_LENGTH(0) = length;
   else return(0);
-  READ_TARGET_DATASLOT_CONTROL(0) = TARGET_DATASLOT_READ_REG;
+  READ_TARGET_DATASLOT_CONTROL(0) = TARGET_DATASLOT_READ_REG; apf_issued = true;
   mainprintf("READ_TARGET_DATASLOT_LENGTH Sent %.4x\r\n", WRITE_TARGET_DATASLOT_LENGTH(0));
   // Not until DONE: the error bits stay the last command's for as long as this one runs.
   // A .sub that isn't there leaves them up, so a disc of one file, with no other open
@@ -227,7 +235,7 @@ uint32_t dataslot_read_lba_fast( uint32_t length, bool wait_update)
   int i = 0;
   if (length > 0)READ_TARGET_DATASLOT_LENGTH(0) = length;
   else return(0);
-  READ_TARGET_DATASLOT_CONTROL(0) = TARGET_DATASLOT_READ_REG;
+  READ_TARGET_DATASLOT_CONTROL(0) = TARGET_DATASLOT_READ_REG; apf_issued = true;
 
   // mainprintf("READ_TARGET_DATASLOT_LENGTH fast Sent %.4x\r\n", length);
   if (wait_update) {
@@ -251,7 +259,7 @@ uint32_t dataslot_write_lba_set(uint16_t dataslot, uint32_t address, uint32_t of
   WRITE_TARGET_DATASLOT_BRIDGE_ADD(0) = address;
   WRITE_TARGET_DATASLOT_OFFSET(0) = offset << 9;
   WRITE_TARGET_DATASLOT_LENGTH(0) = 1;
-  WRITE_TARGET_DATASLOT_CONTROL(0) = TARGET_DATASLOT_WRITE_REG;
+  WRITE_TARGET_DATASLOT_CONTROL(0) = TARGET_DATASLOT_WRITE_REG; apf_issued = true;
 
     // mainprintf("dataslot_write_lba_set address %.4x offset %.4x\r\n", address, offset);
   int apf_codes;
@@ -272,7 +280,7 @@ uint32_t dataslot_write_lba(uint32_t length, bool update_address)
 {
   if (length > 0)WRITE_TARGET_DATASLOT_LENGTH(0) = length;
   else return(0);
-  WRITE_TARGET_DATASLOT_CONTROL(0) = TARGET_DATASLOT_WRITE_REG;
+  WRITE_TARGET_DATASLOT_CONTROL(0) = TARGET_DATASLOT_WRITE_REG; apf_issued = true;
   int apf_codes;
 	do
 	{
@@ -337,7 +345,7 @@ int GetFileNameDataSlot (dataslot_type *aft){
   WRITE_TARGET_DATASLOT_ID(0) = aft->aft_dataslot;
   WRITE_TARGET_DATASLOT_BRIDGE_ADD(0) = APF_SCRACH_ADDRESS_OFFSET;
   WRITE_TARGET_DATASLOT_OFFSET(0) = APF_SCRACH_ADDRESS_OFFSET;
-  WRITE_TARGET_DATASLOT_CONTROL(0) = TARGET_DATASLOT_GET_FILENAME_REG;
+  WRITE_TARGET_DATASLOT_CONTROL(0) = TARGET_DATASLOT_GET_FILENAME_REG; apf_issued = true;
   uint32_t error = dataslot_result();
   if (error)
   {
@@ -394,7 +402,7 @@ int OpenFileNameDataSlot (dataslot_type *aft, const char *s){
     WRITE_TARGET_DATASLOT_ID(0) = aft->aft_dataslot;
     WRITE_TARGET_DATASLOT_BRIDGE_ADD(0) = APF_SCRACH_ADDRESS_OFFSET;
     WRITE_TARGET_DATASLOT_OFFSET(0) = APF_SCRACH_ADDRESS_OFFSET;
-    WRITE_TARGET_DATASLOT_CONTROL(0) = TARGET_DATASLOT_OPEN_FILENAME_REG;
+    WRITE_TARGET_DATASLOT_CONTROL(0) = TARGET_DATASLOT_OPEN_FILENAME_REG; apf_issued = true;
     riscusleep(10);
     strcpy(data, s);
     dataslot_pathname_file_decode(aft);

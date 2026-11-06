@@ -26,7 +26,11 @@
 //                         launch's, the file written with the Pocket's reset on before the
 //                         firmware has run (a wake), --load-at not used. SIM_POCKET_BADSUM=1:
 //                         the file's system card sum changed; SIM_POCKET_ACFLAG=1: its Arcade
-//                         Card flag set (both to be refused, the game going on)
+//                         Card flag set (both to be refused, the game going on).
+//                         SIM_POCKET_HOLD=N: the Pocket answers none of the drive's reads or
+//                         opens from N frames before a save or a load (its menu) until the
+//                         command is done, and a wake's reset is let go only after the load's
+//                         ok: the worst the Pocket may do, as on 6 Nov 2026 it seemed to
 // From the clock the console is let go, after.txt has each whole frame: its number
 // from the let-go, its picture's CRC and a CRC of the chips' own sound (the PSG's,
 // CD audio's and ADPCM's outputs before the filters) on every clock of it.
@@ -384,6 +388,19 @@ static long pa, pchunk_end, pt, pfile_bytes;
 static bool pfirst, p_loaded, p_resaving;
 static double pphase;
 static int pre_status, pre_do, p_status_old;
+static int p_hold = -1;				// SIM_POCKET_HOLD: frames of menu before a command, -1 off
+
+// SIM_POCKET_HOLD: the Pocket busy with its menu or a save state, answering no read of the core's
+bool sim_pocket_hold() {
+  if (!pb || p_hold < 0) return false;
+  // --resave's read-back comes the instant a load is answered, sooner than anyone could ask
+  // on a Pocket, and waits on the drive's reads: answered
+  if (p_resaving) return false;
+  if (ps != P_IDLE && ps != P_DONE) return true;
+  if (ps == P_IDLE && running && st_save_at >= 0 && st_out.empty() && nframe + p_hold >= st_save_at) return true;
+  if (ps == P_IDLE && running && !p_wake && !p_loaded && !st_loaded.empty() && nframe + p_hold >= st_load_at) return true;
+  return false;
+}
 
 static void p_start_save(const std::string &file) {
   st_out = file; pb->savestate_start = 1; ps = P_ACK; t_cmd = clocks;
@@ -468,16 +485,21 @@ static void pocket_74a() {
       pt = 0; pa += 4;
       if (pa == (long)st_loaded.size()) {
         ss_report("written in");
-        if (p_wake) ps = P_LRESET;
+        if (p_wake && p_hold < 0) ps = P_LRESET;
         else { pb->savestate_load = 1; ps = P_LACK; }
       }
       else if (pa == pchunk_end) { pchunk_end += P_CHUNK; pt = -P_STALL; }
     }
     break;
   case P_LRESET:
-    // the Pocket's reset let go, then Savestate Load
+    // the Pocket's reset let go, then Savestate Load (with SIM_POCKET_HOLD, the load answered first)
     if (++pt == 2000) { pb->mpu_reset_n = 1; ss_report("the Pocket's reset let go"); }
-    if (pt == 4000) { pt = 0; pb->savestate_load = 1; ps = P_LACK; }
+    if (pt == 4000) {
+      pt = 0;
+      if (p_hold < 0) { pb->savestate_load = 1; ps = P_LACK; }
+      else if (!st_resave.empty()) { p_resaving = true; p_start_save(st_resave); }
+      else ps = P_DONE;
+    }
     break;
   case P_LACK:
     if (pb->savestate_load_ack) { pb->savestate_load = 0; ps = P_LPOLL; }
@@ -486,7 +508,8 @@ static void pocket_74a() {
     if (pb->savestate_load_err) { ss_report("an error (Savestate Load)"); ps = P_DONE; }
     else if (pb->savestate_load_ok) {
       ss_report("restored");
-      if (!st_resave.empty()) { p_resaving = true; p_start_save(st_resave); }
+      if (!pb->mpu_reset_n) { pt = 0; ps = P_LRESET; }	// SIM_POCKET_HOLD's wake: the reset after the ok
+      else if (!st_resave.empty()) { p_resaving = true; p_start_save(st_resave); }
       else ps = P_DONE;
     }
     break;
@@ -636,6 +659,7 @@ int main(int argc, char **argv) {
     if (const char *v = getenv("SIM_POCKET_CHUNK")) P_CHUNK = atoi(v);
     if (const char *v = getenv("SIM_POCKET_STALL")) P_STALL = atoi(v);
     p_wake = getenv("SIM_POCKET_RESET") != nullptr;
+    if (const char *v = getenv("SIM_POCKET_HOLD")) p_hold = atoi(v);
     pb->clk_74a = 0; pb->clk_sys = 0; pb->mpu_reset_n = 1; pb->eval();
     // the drive's block is the MPU's RAM from 0xF000 (64K: Main_Bram's 16K words)
     sim_drive_block = (uint8_t *)&pb->rootp->pocket_bridge__DOT__Main_Bram__DOT__dbram__DOT__altsyncram_component__DOT__mem[0xF000 / 4];
