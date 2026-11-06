@@ -54,6 +54,35 @@ reg        old_ref;
 
 wire [22:0] word = {bank[0], a[22:1]};
 
+// The chip's own timing, which an array can't show: the controller refreshes in an idle
+// slot (q at START with nothing asked), and a clkref resets q wherever it is, so an ACTIVE
+// can follow a REFRESH or another ACTIVE too soon. Each such ACTIVE is counted and named;
+// with +strict (SIM_SDRAM_STRICT=1) its read gives what the data bus last carried and its
+// write is lost, as a chip that ignored the command would. tRC and tRFC: 6 clocks of 85.9 MHz.
+localparam TRC = 6;
+reg [63:0] cyc = 0, last_ref = 0, last_act = 0;
+reg        bad = 0, strict = 0;
+reg [15:0] last_dq = 0;
+integer    viol = 0;
+initial strict = $test$plusargs("strict");
+always @(posedge clk) begin
+	cyc <= cyc + 1'd1;
+	if (q == STATE_START && cyc > 64) begin
+		if (ram_req) begin
+			bad <= (cyc - last_ref < TRC) || (cyc - last_act < TRC);
+			if ((cyc - last_ref < TRC) || (cyc - last_act < TRC)) begin
+				viol = viol + 1;
+				if (viol <= 20 || viol % 1000 == 0)
+					$display("sdram: ACTIVE %0d clocks after a REFRESH, %0d after an ACTIVE (%s %06x), %0d so far",
+						cyc - last_ref, cyc - last_act, wr ? "write" : "read", {bank, a}, viol);
+			end
+			last_act <= cyc;
+		end
+		else last_ref <= cyc;
+	end
+	if (q == STATE_READY && ~wr && ram_req && !(strict && bad)) last_dq <= mem[word];
+end
+
 always @(posedge clk) begin
 	old_ref <= clkref;
 
@@ -85,12 +114,15 @@ always @(posedge clk) begin
 	end
 
 	// the chip: a write in CONT, by byte when b; a read's byte as dout at READY
-	if (q == STATE_CONT && ram_req && wr) begin
+	if (q == STATE_CONT && ram_req && wr && !(strict && bad)) begin
 		if (!b) mem[word] <= data;
 		else if (a[0]) mem[word][15:8] <= data[15:8];
 		else mem[word][7:0] <= data[7:0];
 	end
-	if (q == STATE_READY && ~wr && ram_req) dout <= a[0] ? mem[word][15:8] : mem[word][7:0];
+	if (q == STATE_READY && ~wr && ram_req) begin
+		if (strict && bad) dout <= a[0] ? last_dq[15:8] : last_dq[7:0];
+		else dout <= a[0] ? mem[word][15:8] : mem[word][7:0];
+	end
 
 	q <= q + 1'd1;
 	if(~old_ref & clkref) q <= 0;

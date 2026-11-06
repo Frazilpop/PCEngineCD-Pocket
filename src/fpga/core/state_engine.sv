@@ -110,6 +110,7 @@ module state_engine (
 	output reg         sd_we = 0,
 	output reg         sd_rd = 0,
 	input  wire  [7:0] sd_q,
+	input  wire        sd_clkref,			// sdram.sv's clkref, from every source (the CPU's, the refetch, sd_ref)
 
 	// the MB128's memory (mb128_psram.sv's save-path port), a word at a time
 	output reg         mb = 0,
@@ -230,6 +231,20 @@ wire [20:0] W_SIZE = f_ac ? W_AC + {ac_hw, 15'd0} : mb128_on ? W_MB128_END : W_M
 wire [20:0] W_AC_END = W_AC + {ac_hw, 15'd0};
 assign size_words = W_SIZE;
 
+// ---- when the SDRAM can be asked ----
+// sdram.sv runs a 16-clock cycle of its 85.9 MHz (8 of this clock): a clkref's rise starts
+// one, and with nothing asked at its start it refreshes. Its q wraps on its own when no
+// clkref comes, so an engine asking at any time it liked put its ACTIVE 2 or 4 clocks of
+// 85.9 MHz after a refresh, inside tRFC. The Pocket's chip mostly took
+// it, but about one access in 400 read the bus's last word: 6 Nov 2026's Memories had some
+// 400 words of CD RAM each from the word before, and the game crashed on the code. ref_t
+// counts this clock's clocks since a clkref was last high (mod 8, as the cycle wraps); an
+// access asked when it is 4 restarts the cycle 10 of its clocks in (11 at most), after the
+// last cycle's ACTIVE or refresh and its own read's READY (7), before the next wrap (16).
+reg  [2:0] ref_t = 0;
+wire       sd_ok = ref_t == 3'd4;
+always @(posedge clk) ref_t <= sd_clkref ? 3'd1 : ref_t + 1'd1;
+
 // ---- frames since power-up ----
 reg [31:0] frame = 0;
 reg        vbl_old = 0;
@@ -264,6 +279,10 @@ reg         w_busy = 0, w_wr = 0;
 reg  [20:0] w_a = 0;
 reg  [15:0] w_d = 0;
 reg   [5:0] w_t = 0;
+reg   [1:0] sd_ph = 0;					// an SDRAM word: 0 its first byte to ask, 1 its second, 2 both asked
+reg   [2:0] sd_t = 0;					// clocks since the last ask
+reg         fetch_pend = 0;				// the refetch's R seen, waiting for sd_ok
+reg         go_lead = 0;				// the let-go's clkref sent (S_GO_POS)
 
 integer i;
 initial begin
@@ -478,15 +497,31 @@ always @(posedge clk) begin
 				end
 			end
 			else if ((w_a >= W_CDRAM && w_a < W_CDRAM_END) || (f_ac && w_a >= W_AC && w_a < W_AC_END)) begin
-				// the SDRAM, a byte at a time through the CD RAM's path, on a clkref of its own
-				if (w_t == 0 || w_t == 9) begin
+				// the SDRAM, a byte at a time through the CD RAM's path, on a clkref of its own,
+				// each asked when sd_ok says the chip's cycle allows (above): the second 5 clocks
+				// after the first, each byte read 7 clocks after its ask. 21 clocks at the most,
+				// inside the bridge's 24.
+				if (w_t == 0) begin
 					sd <= 1;
-					sd_a <= w_a < W_CDRAM_END ? 22'h200000 + {(w_a - W_CDRAM), w_t != 0} : {(w_a - W_AC), w_t != 0};
-					sd_d <= w_t != 0 ? w_d[7:0] : w_d[15:8];
+					sd_a <= w_a < W_CDRAM_END ? 22'h200000 + {(w_a - W_CDRAM), 1'b0} : {(w_a - W_AC), 1'b0};
+					sd_d <= w_d[15:8];
+					sd_ph <= 0;
 				end
-				if (w_t == 1 || w_t == 10) begin sd_ref <= 1; sd_we <= w_wr; sd_rd <= ~w_wr; end
-				if (w_t == 8) SS_DO[15:8] <= sd_q;
-				if (w_t == 17) begin SS_DO[7:0] <= sd_q; sd <= 0; w_busy <= 0; end
+				else begin
+					sd_t <= sd_t + 1'd1;
+					if (sd_ph == 2'd0 && sd_ok) begin
+						sd_ref <= 1; sd_we <= w_wr; sd_rd <= ~w_wr;
+						sd_ph <= 2'd1; sd_t <= 0;
+					end
+					if (sd_ph == 2'd1 && sd_ok) begin
+						sd_a[0] <= 1'b1;
+						sd_d <= w_d[7:0];
+						sd_ref <= 1; sd_we <= w_wr; sd_rd <= ~w_wr;
+						sd_ph <= 2'd2; sd_t <= 0;
+					end
+					if (sd_ph == 2'd2 && sd_t == 3'd1) SS_DO[15:8] <= sd_q;
+					if (sd_ph == 2'd2 && sd_t == 3'd6) begin SS_DO[7:0] <= sd_q; sd <= 0; w_busy <= 0; end
+				end
 			end
 			else w_busy <= 0;		// unused, or the bridge's: reads 0, a write goes nowhere
 		end
@@ -497,6 +532,7 @@ always @(posedge clk) begin
 			from_load <= 0;
 			go_pend <= 0;
 			save_pend <= 0;
+			fetch_pend <= 0;
 			if (SS_SAVE) begin
 				SS_STATUS <= 1;
 				drv_park <= 1;
@@ -585,14 +621,26 @@ always @(posedge clk) begin
 			// R once: the opcode read again, a frame ahead of the let-go
 			if ((SS_SAVE || save_pend) && from_load) begin
 				save_pend <= 0;
+				fetch_pend <= 0;
 				for (i = 0; i < NCHAIN; i = i + 1) cnt[i] <= 0;
 				st <= S_FROZEN;
 			end
-			else if (at_rec) begin refetch <= 1; st <= S_GO_POS; end
+			else if (at_rec || fetch_pend) begin
+				// as soon after R as the SDRAM's cycle allows (sd_ok): the CPU waits till the let-go
+				fetch_pend <= 1;
+				if (sd_ok) begin refetch <= 1; fetch_pend <= 0; go_lead <= 0; st <= S_GO_POS; end
+			end
 
-		S_GO_POS:
-			// R again: the snapshot back at its edge
+		S_GO_POS: begin
+			// R again: the snapshot back at its edge. The CPU's first clkref comes 4 clocks
+			// after R (its pause off at S_GO, its CE, then ce_rom), at a time sdram.sv's cycle
+			// knows nothing of; a clkref of the engine's 3 to 7 clocks before it, sent where
+			// the cycle allows (ref_t 4 to 7, one of R-4 to R always is), puts it inside.
+			if (!go_lead && ref_t[2] && vpos == rec_v && hpos <= rec_h && rec_h - hpos <= 12'd4) begin
+				sd_ref <= 1; go_lead <= 1;
+			end
 			if (at_rec) begin rest <= 1; mem <= 0; st <= S_GO; end
+		end
 
 		S_GO: begin
 			// and from this clock's edge on, everything goes on

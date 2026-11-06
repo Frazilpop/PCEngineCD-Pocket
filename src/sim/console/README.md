@@ -17,6 +17,7 @@ bash tools/mb128-test.sh                           # the repo's MB128 card again
 SIM_OUT=build/sim_b NO_BUILD=1 bash tools/sim.sh ... # on the build there is, into its own folder; several at once
 SIM_FW_PRINT=1 bash tools/sim.sh ...               # the firmware's mainprintf on stderr
 SIM_READ_EARLY=1 bash tools/sim.sh ...             # the fault of firmware before 5 Nov 2026: after a failed open, the next read is taken as finished at once
+SIM_SDRAM_STRICT=1 bash tools/sim.sh ...           # an SDRAM access inside tRC or tRFC fails, as the Pocket's chip sometimes does
 ```
 
 `--press-file FILE` takes lines of `F:buttons[:N]` from a file as the run goes, to steer a menu you can
@@ -33,7 +34,23 @@ again) and writes, as Genesis-Pocket's harness does, and points the firmware's b
 on before the firmware has run, then the firmware's start with the console's reset held 0.53 s.
 `SIM_POCKET_BADSUM=1` and `SIM_POCKET_ACFLAG=1` spoil the header so the load is refused.
 `SIM_PARK_NO_LOAD=1` is the firmware before 6 Nov 2026's load bit. `tools/state-test.sh` makes the
-runs and compares them (its header says how; `--refuse VAR` for a refused load).
+runs and compares them (its header says how; `--refuse VAR` for a refused load), with the SDRAM's
+timing strict (below).
+
+A Memory off the Pocket's card loads too: cut off the Pocket's 0x254-byte header and the 52,764-byte
+picture, give the run the card's disc and system card, and `SIM_CARD_ROOT=/Volumes/<card>` so the
+drive's block, which names the card's files from `/Assets` on, opens them there. `SIM_PCTRACE=1`
+then shows where the CPU goes after the let-go: each frame's fetches by address, the CD's interrupt
+bits, and the way in to the first fetch from the CPU's RAM or the system card's IRQ2/BRK entry.
+
+**The SDRAM's timing.** `sdram_sim.sv` counts every ACTIVE that comes less than 6 clocks of 85.9 MHz
+after a refresh or another ACTIVE (`sdram:` lines, the first 20 and every 1000th), which `sdram.sv`
+allows whenever a clkref restarts its cycle just after an idle slot's refresh. `SIM_SDRAM_STRICT=1`
+makes those fail as a chip that ignored the command would: a read gives the data bus's last word, a
+write is lost. Normal play makes 13 as the card comes in and a few after the CPU's long waits,
+`sdram.sv`'s own, as on MiSTer. 6 Nov 2026's
+save-state engine made one for nearly every byte of CD RAM it moved, and on the Pocket about one
+access in 400 of those read the word before; with strict timing the simulation fails the same way.
 
 `--press F:buttons[:N]` holds buttons on pad 1 from frame F for N frames (4 by default):
 `up down left right i ii select run`, joined with `+`.
@@ -121,8 +138,8 @@ and no check reads it (docs/PLAN.md). MAME's picture is 1088 wide, four across t
   (100) a KB, and a file's open `SIM_CARD_OPEN_US` (2000). These are guesses at the Pocket's, not
   measured. A background read's bytes reach the scratch RAM only when it's done.
 - **`sdram_sim.sv`** has `sdram.sv`'s access manager word for word, so the `rd_rdy` a game waits
-  on is timed as on the Pocket, and an array where the chip is. No refresh, which the real one does
-  only in idle slots.
+  on is timed as on the Pocket, and an array where the chip is. The refresh it does in idle slots
+  only counts toward the timing check above; the array never forgets.
 - **It is deterministic**: the same card, disc, presses and settings give the same frames, CRC for
   CRC.
 - **The Save slot** goes through `main.sv`'s real path at `core_top.v`'s timing, in `main.cpp`

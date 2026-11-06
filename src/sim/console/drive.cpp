@@ -60,7 +60,12 @@ static bool open_slot(int id, const std::string &path)
 	s.f = nullptr;
 	s.size = 0;
 	struct stat st;
-	if (stat(path.c_str(), &st) || !(s.f = fopen(path.c_str(), "rb"))) return false;
+	// SIM_CARD_ROOT: where the Pocket's card is on this Mac, for a path the Pocket wrote
+	// (a Memory's drive block has the card's, from /Assets on)
+	std::string p = path;
+	const char *root = getenv("SIM_CARD_ROOT");
+	if (root && p.rfind("/Assets/", 0) == 0) p = root + p;
+	if (stat(p.c_str(), &st) || !(s.f = fopen(p.c_str(), "rb"))) return false;
 	s.path = path;
 	s.size = st.st_size;
 	return true;

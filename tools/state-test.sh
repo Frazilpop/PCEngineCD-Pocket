@@ -17,6 +17,10 @@
 # Runs the simulation tools/sim.sh builds; NO_BUILD=1 to run two at once on that build, and
 # STATE_SIM=build/DIR to run a copy of build/sim, so a long run isn't touched by a new build.
 set -uo pipefail
+# The SDRAM's timing strict: an access the chip may ignore fails (src/sim/console/README.md).
+# SIM_SDRAM_STRICT= (empty) runs without it.
+export SIM_SDRAM_STRICT=${SIM_SDRAM_STRICT-1}
+[ -n "$SIM_SDRAM_STRICT" ] || unset SIM_SDRAM_STRICT
 cd "$(dirname "$0")/.."
 CARD=""; DISC=""; F=60; N=300; NAME=""; LOADAT=30; PRESS=(); OPT=(); REFUSE=""; REUSE=""
 BIN=${STATE_SIM:-build/sim}

@@ -78,7 +78,11 @@ module sim_top (
 	// the chips' own sound, before the filters: {psg_sl, psg_sr, cdda_sl, cdda_sr, adpcm_s}
 	output logic [79:0] chip_snd,
 	// for SIM_SSDBG: the VDC's registers
-	output logic [511:0] dbg_vdc_regs
+	output logic [511:0] dbg_vdc_regs,
+	output logic [20:0] dbg_cpu_a,		// SIM_PCTRACE: the CPU's address, and its opcode fetch
+	output logic        dbg_cpu_sync,
+	output logic [11:0] dbg_cd,		// SIM_PCTRACE: the CD's interrupt and its sources
+	output logic  [7:0] dbg_cpu_sp
 );
 	wire [35:0] ext_bus;
 	assign ext_bus[31:16] = io_din;
@@ -195,6 +199,13 @@ module sim_top (
 	);
 
 	assign dbg_vdc_regs = pce.pce_top.chip.vdc0.regs;
+	assign dbg_cpu_a = pce.pce_top.chip.cpu_a;
+	assign dbg_cpu_sync = pce.ss_sync;
+	assign dbg_cpu_sp = pce.pce_top.chip.cpu.core.sp;
+	assign dbg_cd = {pce.pce_top.chip.cd.irq_n, pce.pce_top.chip.cd.cd_dtr_en, pce.pce_top.chip.cd.cd_dtr,
+		pce.pce_top.chip.cd.cd_dtd_en, pce.pce_top.chip.cd.cd_dtd, pce.pce_top.chip.cd.cd_subcd_en, pce.pce_top.chip.cd.cd_subcd,
+		pce.pce_top.chip.cd.adpcm_end_en, pce.pce_top.chip.cd.adpcm_end, pce.pce_top.chip.cd.adpcm_half_en, pce.pce_top.chip.cd.adpcm_half,
+		pce.pce_top.chip.cd.scsi_req_n};
 	assign chip_snd = {pce.psg_sl, pce.psg_sr, pce.cdda_sl, pce.cdda_sr, pce.adpcm_s};
 	assign mb128_state = pce.MB128.r_State;
 	assign mb128_req   = pce.MB128.r_Req;

@@ -470,6 +470,7 @@ module pce (
       .sd_we(ss_sd_we),
       .sd_rd(ss_sd_rd),
       .sd_q(rom_sdata),
+      .sd_clkref(ce_rom | ss_refetch | ss_sd_ref),
 
       .mb(ss_mb),
       .mb_a(ss_mb_a),

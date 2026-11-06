@@ -39,7 +39,9 @@
 // the Pocket, through the real line buffer), frames.txt (each frame's number, size, a
 // CRC of its pixels and its top-left pixel), audio.wav (main.sv's audio_l and audio_r,
 // 48 kHz), drive.log (the drive's commands with their frame and millisecond) and run.json.
+#include <algorithm>
 #include <chrono>
+#include <map>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -252,6 +254,39 @@ static void read_press_file() {
   fclose(f);
 }
 
+// SIM_PCTRACE: from a load's let-go, each frame's opcode fetches counted by address with
+// the CD's interrupt bits, and once, the way in to the first fetch from the CPU's RAM or
+// the system card's IRQ2/BRK entry ($E736): the last 3000 fetches, each jump or change of
+// the stack pointer shown (a crash in 6 Nov 2026's Memories was found this way)
+static bool pc_trace = getenv("SIM_PCTRACE") != nullptr, pc_sync_old = false, pc_trail_done = false;
+static std::map<uint32_t, uint32_t> pc_count, pc_cd_at_irq;
+static uint32_t pc_irq_clocks, pc_ri, pc_ring[3000];
+
+static void pc_trace_fetch() {
+  bool sy = top->dbg_cpu_sync;
+  if (sy && !pc_sync_old) {
+    uint32_t a = top->dbg_cpu_a;
+    pc_count[a]++;
+    if (a == 0x736) pc_cd_at_irq[top->dbg_cd]++;
+    if (!pc_trail_done && rel_frame >= -1) {
+      pc_ring[pc_ri++ % 3000] = a | top->dbg_cpu_sp << 24;
+      if ((a >> 13) == 0xF8 || a == 0x736) {
+        printf("pc: the way to %06x, frame %ld (address/SP at each jump):", a, rel_frame);
+        uint32_t prev = 0;
+        for (uint32_t k = pc_ri < 3000 ? 0 : pc_ri - 3000; k < pc_ri; k++) {
+          uint32_t e = pc_ring[k % 3000], ea = e & 0xFFFFFF, pa = prev & 0xFFFFFF;
+          if (!prev || (e >> 24) != (prev >> 24) || ea < pa || ea - pa > 8) printf(" %06x/%02x", ea, e >> 24);
+          prev = e;
+        }
+        printf("\n");
+        pc_trail_done = true;
+      }
+    }
+  }
+  if (!(top->dbg_cd & 0x800)) pc_irq_clocks++;
+  pc_sync_old = sy;
+}
+
 static void frame_done() {
   if (!line.empty()) { lines.push_back(line); line.clear(); }
   if (!running) { lines.clear(); return; }
@@ -263,6 +298,18 @@ static void frame_done() {
   uint32_t hash = crc32(0, (const Bytef *)frame.data(), frame.size() * 4);
   fprintf(frames_txt, "%ld %dx%d %08x %06x\n", nframe, w, h, hash, frame.empty() ? 0 : frame[0]);
   fflush(frames_txt);
+  if (pc_trace && fa && !pc_count.empty()) {
+    std::vector<std::pair<uint32_t, uint32_t>> v;
+    for (auto &c : pc_count) v.push_back({c.second, c.first});
+    std::sort(v.rbegin(), v.rend());
+    printf("pc: frame %ld, %zu addresses:", rel_frame, v.size());
+    for (size_t i = 0; i < v.size() && i < 12; i++) printf(" %06x*%u", v[i].second, v[i].first);
+    printf("  CD {IRQ_N, DTR_EN, DTR, DTD_EN, DTD, SUBCD_EN, SUBCD, END_EN, END, HALF_EN, HALF, REQ_N} %03x, IRQ_N low %u clocks; at $E736:", top->dbg_cd, pc_irq_clocks);
+    for (auto &c : pc_cd_at_irq) printf(" %03x*%u", c.first, c.second);
+    printf("\n");
+    pc_cd_at_irq.clear(); pc_irq_clocks = 0;
+    pc_count.clear();
+  }
   if (getenv("SIM_SSDBG")) {
     auto reg = [&](int i) { int b = (31 - i) * 16; return (top->dbg_vdc_regs[b / 32] >> (b % 32)) & 0xFFFF; };
     printf("vdc: VPR %04x VDR %04x VCR %04x DVSSR %04x CR %04x\n", reg(12), reg(13), reg(14), reg(19), reg(5));
@@ -524,6 +571,7 @@ void sim_tick(uint32_t n) {
     if (pb) { pre_status = top->ss_status; pre_do = top->ss_do; }
     top->clk_sys = 1; top->clk_mem = 1; top->eval();
     clocks++;
+    if (pc_trace && fa) pc_trace_fetch();
     if (pb) pocket_sys_edge();
     else if (running) ss_step();
     if (fa) {
@@ -615,7 +663,12 @@ static int button_bits(const std::string &names) {
 }
 
 int main(int argc, char **argv) {
-  Verilated::commandArgs(argc, argv);
+  // SIM_SDRAM_STRICT=1: sdram_sim.sv's reads and writes that break the chip's timing fail
+  {
+    static std::vector<const char *> va(argv, argv + argc);
+    if (getenv("SIM_SDRAM_STRICT")) va.push_back("+strict");
+    Verilated::commandArgs((int)va.size(), va.data());
+  }
   bool arcade = false;
   for (int i = 1; i < argc; i++) {
     std::string a = argv[i];
