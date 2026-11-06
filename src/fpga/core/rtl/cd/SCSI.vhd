@@ -159,7 +159,17 @@ architecture rtl of SCSI is
 	-- (the save state's chain reads it, and VHDL-93 can't read an out port)
 	signal DBO_R : std_logic_vector(7 downto 0);
 
+	-- (the save state's chain reads it, and VHDL-93 can't read an out port)
+	signal STOP_CD_SND_R : std_logic;
+
+	-- (the save state's chain reads it, and VHDL-93 can't read an out port)
+	signal CD_DATA_END_R : std_logic;
+
 begin
+
+	CD_DATA_END <= CD_DATA_END_R;
+
+	STOP_CD_SND <= STOP_CD_SND_R;
 
 	DBO <= DBO_R;
 
@@ -197,10 +207,10 @@ begin
 	SS_Q(202 downto 195) <= DATA_BUF(9);
 	SS_Q(206 downto 203) <= std_logic_vector(DATA_POS);
 	SS_Q(210 downto 207) <= sp_bits(SP);
-	SS_Q(211) <= STOP_CD_SND;
+	SS_Q(211) <= STOP_CD_SND_R;
 	SS_Q(212) <= COMM_OUT;
 	SS_Q(213) <= DATA_OUT;
-	SS_Q(214) <= CD_DATA_END;
+	SS_Q(214) <= CD_DATA_END_R;
 	SS_Q(215) <= STAT_PEND;
 	SS_Q(216) <= DOUT_PEND;
 	SS_Q(217) <= FIFO_RD_REQ;
@@ -272,11 +282,11 @@ begin
 			DATA_BUF <= (others => (others => '0'));
 			DATA_POS <= (others => '0');
 			SP <= SP_FREE;
-			STOP_CD_SND <= '0';
+			STOP_CD_SND_R <= '0';
 			
 			COMM_OUT <= '0';
 			DATA_OUT <= '0';
-			CD_DATA_END <= '0';
+			CD_DATA_END_R <= '0';
 			STAT_PEND <= '0';
 			DOUT_PEND <= '0';
 			FIFO_RD_REQ <= '0';
@@ -299,7 +309,7 @@ begin
 
 			COMM_OUT <= '0';
 			DATA_OUT <= '0';
-			CD_DATA_END <= '0';
+			CD_DATA_END_R <= '0';
 			FIFO_RD_REQ <= '0';
 			
 			if RST_N = '0' then
@@ -378,10 +388,10 @@ begin
 								CD_Nr <= '1';
 								SP <= SP_FREE;
 								if ((COMM(0) = x"08") or (COMM(0) = x"DA")) then	-- READ6 and PAUSE commands should mute sound, but still drain FIFO
-									STOP_CD_SND <= '1';
+									STOP_CD_SND_R <= '1';
 								end if;
 								if ((COMM(0) = x"D8") or (COMM(0) = x"D9")) then	-- SAPSP and SAPEP commands should unmute sound (FIFO should be empty by now)
-									STOP_CD_SND <= '0';
+									STOP_CD_SND_R <= '0';
 								end if;
 							else
 								SP <= SP_COMM_BEFOREREQ;
@@ -442,7 +452,7 @@ begin
 						if REQ_Nr = '0' and ACK_N = '0' then
 							REQ_Nr <= '1';
 							SP <= SP_DATAIN_END;
-							STOP_CD_SND <= '0';		-- unmute
+							STOP_CD_SND_R <= '0';		-- unmute
 						end if;
 					
 					when SP_DATAIN_END =>
@@ -453,7 +463,7 @@ begin
 								FIFO_RD_REQ <= '1';
 								SP <= SP_DATAIN_START;
 							else
-								CD_DATA_END <= '1';
+								CD_DATA_END_R <= '1';
 								SP <= SP_FREE;
 							end if;
 							DATAIN_CNT <= DATAIN_CNT + 1;
@@ -515,10 +525,10 @@ begin
 				DATA_BUF(9) <= SS_D(202 downto 195);
 				DATA_POS <= unsigned(SS_D(206 downto 203));
 				SP <= sp_state(SS_D(210 downto 207));
-				STOP_CD_SND <= SS_D(211);
+				STOP_CD_SND_R <= SS_D(211);
 				COMM_OUT <= SS_D(212);
 				DATA_OUT <= SS_D(213);
-				CD_DATA_END <= SS_D(214);
+				CD_DATA_END_R <= SS_D(214);
 				STAT_PEND <= SS_D(215);
 				DOUT_PEND <= SS_D(216);
 				FIFO_RD_REQ <= SS_D(217);
