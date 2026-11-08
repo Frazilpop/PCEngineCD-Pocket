@@ -31,6 +31,7 @@ module state_engine (
 
 	input  wire        SS_SAVE,
 	input  wire        SS_LOAD,
+	input  wire        menu,				// the Pocket's menu open
 	input  wire        SS_GO,
 	output reg   [1:0] SS_STATUS = 0,
 	input  wire [20:0] SS_ADDR,
@@ -59,7 +60,7 @@ module state_engine (
 	output reg         snap = 0,			// the VDC's snapshot taken, and put back
 	output reg         rest = 0,
 	output wire        keep,				// not idle: the console's resets held off
-	output wire        blank,				// a load under way, or a save's freeze: the picture blanked
+	output wire        blank,				// a save or a load under way, or the menu just closed: the picture blanked
 	input  wire        busy,				// something on its way (the VDC's port or a DMA, the VCE's port)
 	input  wire        freeze_ok,			// the ADPCM memory has nothing in flight
 
@@ -253,6 +254,26 @@ always @(posedge clk) begin
 	if (vbl & ~vbl_old) frame <= frame + 1'd1;
 end
 
+// ---- the Pocket's menu ----
+// The picture black for MENU_HOLD frames after the menu closes, so a Memory's save, which the
+// Pocket asks for a frame or two after, is black from the menu to its let-go. The save's
+// header records, at word 22, the menu open at the ask (bit 15), the menu seen open since
+// power-up (bit 14), and the frames since it last closed (saturating at 0x3FFF); and at word
+// 23 the frames from the ask to the freeze.
+localparam [3:0] MENU_HOLD = 4'd10;
+reg        menu_old = 0, menu_seen = 0;
+reg  [3:0] menu_hold = 0;
+reg [13:0] menu_since = 14'h3FFF;
+always @(posedge clk) begin
+	menu_old <= menu;
+	if (menu) menu_seen <= 1;
+	if (~menu & menu_old) begin menu_hold <= MENU_HOLD; menu_since <= 0; end
+	else if (vbl & ~vbl_old) begin
+		if (menu_hold) menu_hold <= menu_hold - 1'd1;
+		if (~&menu_since) menu_since <= menu_since + 1'd1;
+	end
+end
+
 // ---- the machine ----
 localparam [3:0] S_IDLE = 0, S_SEEK = 1, S_PARK = 2, S_FREEZE = 3, S_FROZEN = 4, S_UNWIND = 5,
                  S_GO_FRAME = 6, S_GO_FETCH = 7, S_GO_POS = 8, S_GO = 9, S_LOADING = 10, S_LWAIT = 11;
@@ -263,6 +284,8 @@ reg   [9:0] rec_v = 0;				// the raster clock of the freeze
 reg  [11:0] rec_h = 0;
 reg         rec_fast = 0;
 reg  [31:0] rec_frame = 0;
+reg  [15:0] rec_menu = 0;				// the menu at the save's ask (word 22)
+reg  [31:0] ask_frame = 0;				// the frame of the save's ask
 reg   [5:0] cnt [0:NCHAIN-1];			// each chain's words moved since its start, mod its length
 reg  [12:0] fcnt [0:2];					// each FIFO's count, as the file has it
 reg  [12:0] fpos [0:2];					// and how many of its words have gone round or in
@@ -296,7 +319,10 @@ assign keep  = st != S_IDLE;
 // sprites, Exile II's top half), and the frames before them while the drive parks and the
 // clean point is sought. Blanked from the freeze alone, a save on the Pocket went black, then
 // showed the game for a moment, then black again. A load blanks from its stop to its let-go.
-assign blank = st != S_IDLE;
+// Blanked from the ask, the Pocket still showed a black frame, then the game for a frame or
+// two, then the save's black (the ninth play): the gap is the Pocket's, between its menu's
+// close and its ask, so the picture is held black from the close as well.
+assign blank = st != S_IDLE || menu_hold != 0;
 assign drv_load = from_load;
 
 wire [3:0]  w_chain = (w_a - W_CHAINS) >> 6;
@@ -325,6 +351,8 @@ function [15:0] hdr_word(input [6:0] k);
 	7'd19: hdr_word = rec_frame[15:0];
 	7'd20: hdr_word = {6'd0, rec_v};
 	7'd21: hdr_word = {4'd0, rec_h};
+	7'd22: hdr_word = rec_menu;
+	7'd23: hdr_word = rec_frame[15:0] - ask_frame[15:0];
 	default: hdr_word = 16'd0;
 	endcase
 endfunction
@@ -540,6 +568,8 @@ always @(posedge clk) begin
 			fetch_pend <= 0;
 			if (SS_SAVE) begin
 				SS_STATUS <= 1;
+				rec_menu <= {menu, menu_seen, menu_since};
+				ask_frame <= frame;
 				drv_park <= 1;
 				tmr <= 0;
 				st <= S_SEEK;

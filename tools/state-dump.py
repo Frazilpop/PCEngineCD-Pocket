@@ -3,8 +3,9 @@
     python3 -I tools/state-dump.py A.state B.state     what differs between them
     python3 -I tools/state-dump.py A.state             the header, and which regions hold anything
 
-The header's frame number (0x24) is left out: a state read straight back after a load
-has the load's. The last line is "N bytes differ" with N 0 when the two are the same.
+The header's frame number (0x24) and the save's ask (0x2C: the Pocket's menu then, and the
+frames from the ask to the freeze) are left out: a state read straight back after a load has
+the load's frame and its own ask. The last line is "N bytes differ" with N 0 when the two are the same.
 """
 import struct
 import sys
@@ -34,7 +35,7 @@ REGIONS = [
     ('MB128', 0x70000, 0x90000),
     ('Arcade Card RAM', 0x90000, 0x290000),
 ]
-FRAME = range(0x24, 0x28)
+FRAME = set(range(0x24, 0x28)) | set(range(0x2C, 0x30))
 
 
 def header(d):
@@ -42,7 +43,9 @@ def header(d):
     be32 = lambda o: struct.unpack('>I', d[o:o + 4])[0]
     return (f'{d[0:4].decode(errors="replace")} version {be16(4)}, flags {be16(6):04x}, {be32(8)} bytes, '
             f'system card {be32(0x0C)} bytes sum {be32(0x10):08x}, frame {be32(0x24)}, '
-            f'raster line {be16(0x28)} clock {be16(0x2A)}')
+            f'raster line {be16(0x28)} clock {be16(0x2A)}; at the ask the menu {"open" if be16(0x2C) >> 15 else "closed"}, '
+            f'{"seen" if be16(0x2C) >> 14 & 1 else "never seen"} open, {be16(0x2C) & 0x3FFF} frames since it closed, '
+            f'{be16(0x2E)} frames to the freeze')
 
 
 def main():

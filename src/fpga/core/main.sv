@@ -157,6 +157,7 @@ module pce (
     // Save states (state_engine.sv): the window state_bridge.sv drives
     input  wire        SS_SAVE,
     input  wire        SS_LOAD,
+    input  wire        SS_MENU,			// the Pocket's menu open (its 0x00B0 notice), on clk_sys
     input  wire        SS_GO,
     output wire  [1:0] SS_STATUS,
     input  wire [20:0] SS_ADDR,
@@ -403,6 +404,7 @@ module pce (
 
       .SS_SAVE(SS_SAVE),
       .SS_LOAD(SS_LOAD),
+      .menu(SS_MENU),
       .SS_GO(SS_GO),
       .SS_STATUS(SS_STATUS),
       .SS_ADDR(SS_ADDR),
@@ -663,7 +665,8 @@ module pce (
 
   // A save state's load blanks the picture from the header's match to the let-go: the VDC
   // runs on while VRAM, the SAT and the palette fill, and would draw them half written. A
-  // save blanks it from its ask to the let-go (state_engine.sv's blank).
+  // save blanks it from its ask to the let-go, and the picture is black for 10 frames after
+  // the Pocket's menu closes (state_engine.sv's blank).
   reg ss_blank_v = 0;
   always @(posedge clk_mem_85_91) ss_blank_v <= ss_blank;
 

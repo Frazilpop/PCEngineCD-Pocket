@@ -964,6 +964,12 @@ MPU_AFP_CORE #(
   always @(posedge clk_74a) if (bridge_wr && bridge_addr == 32'hF0000004) ss_setting <= {bridge_wr_data[3], bridge_wr_data[1]};
   synch_3 #(.WIDTH(2)) ss_setting_sync (ss_setting, {ss_set_mb128, ss_set_ac}, clk_sys_42_95);
 
+  // The Pocket's menu open (host command 0x00B0), for a save's black: the Pocket closes its menu
+  // and shows the game for a frame or two before it asks for a Memory (state_engine.sv's blank).
+  // The console runs on behind the menu as before.
+  wire ss_menu;
+  synch_3 #(.WIDTH(1)) ss_menu_sync (osnotify_inmenu, ss_menu, clk_sys_42_95);
+
   assign savestate_supported   = 1'b1;
   assign savestate_addr        = 32'h40000000;
   assign savestate_size        = {10'd0, ss_words, 1'b0};
@@ -1169,6 +1175,7 @@ MPU_AFP_CORE #(
 		// save states, through state_bridge.sv
 		.SS_SAVE						(ss_save),
 		.SS_LOAD						(ss_load),
+		.SS_MENU						(ss_menu),
 		.SS_GO						(ss_go),
 		.SS_STATUS					(ss_status),
 		.SS_ADDR						(ss_addr),
