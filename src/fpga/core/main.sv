@@ -661,7 +661,8 @@ module pce (
   logic [7:0] r1, b1, g1;
 
   // A save state's load blanks the picture from the header's match to the let-go: the VDC
-  // runs on while VRAM, the SAT and the palette fill, and would draw them half written.
+  // runs on while VRAM, the SAT and the palette fill, and would draw them half written. A
+  // save blanks it from the freeze to the let-go (state_engine.sv's blank).
   reg ss_blank_v = 0;
   always @(posedge clk_mem_85_91) ss_blank_v <= ss_blank;
 

@@ -59,7 +59,7 @@ module state_engine (
 	output reg         snap = 0,			// the VDC's snapshot taken, and put back
 	output reg         rest = 0,
 	output wire        keep,				// not idle: the console's resets held off
-	output wire        blank,				// a load under way: the picture blanked
+	output wire        blank,				// a load under way, or a save's freeze: the picture blanked
 	input  wire        busy,				// something on its way (the VDC's port or a DMA, the VCE's port)
 	input  wire        freeze_ok,			// the ADPCM memory has nothing in flight
 
@@ -291,7 +291,10 @@ initial begin
 end
 
 assign keep  = st != S_IDLE;
-assign blank = from_load && st != S_IDLE;
+// A save blanks the frozen states, from the freeze to the let-go, as the VDC draws them with
+// the vertical blank's registers and none of the game's raster changes (R-Type's sprites,
+// Exile II's top half): the game's last frame shows while the clean point is sought.
+assign blank = from_load ? st != S_IDLE : (st >= S_FREEZE && st <= S_GO);
 assign drv_load = from_load;
 
 wire [3:0]  w_chain = (w_a - W_CHAINS) >> 6;
