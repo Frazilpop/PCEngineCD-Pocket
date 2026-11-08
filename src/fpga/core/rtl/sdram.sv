@@ -82,11 +82,34 @@ reg        wr;
 reg        b;
 reg        ram_req=0;
 
+// A cycle that wrapped on its own, with no clkref, refreshes only when one is due (REF_DUE
+// clocks since the last, 3 us at 85.9 MHz against the chip's 7.8): a clkref may come at any
+// clock of such a cycle, and one a few clocks after its refresh put the ACTIVE inside tRFC,
+// which the chip may ignore, so the read gives the bus's last word. That was the CPU's first
+// read after any wait longer than a cycle: in Mad Stalker such a read broke the graphics it
+// was loading. A cycle a clkref started refreshes as before, as the next clkref is at least
+// 12 clocks on. A clkref can still come within tRFC of a due refresh (about 1 in 45 of the
+// reads after such a wait), so a request's ACTIVE waits at STATE_START until tRFC is past
+// (rfc_wait, 4 clocks at most): its READY comes by the 12th clock, before the next clkref,
+// and a read late for the CPU only holds WAIT_N low one cycle more, the request asked again.
+localparam [8:0] REF_DUE = 9'd256;
+localparam [8:0] TRFC    = 9'd5;	// since_ref at the ACTIVE's START: 6 clocks after the REFRESH
+reg  [8:0] since_ref = 0;
+reg        own_cycle = 0;			// the cycle wrapped on its own
+reg  [1:0] mode;
+wire      do_ref = mode == 2'b00 && /* MODE_NORMAL */ !ram_req && q == STATE_START && (!own_cycle || since_ref >= REF_DUE);
+wire      rfc_wait = mode == 2'b00 && ram_req && q == STATE_START && since_ref < TRFC;
+
 // access manager
 always @(posedge clk) begin
 	reg old_ref;
 
 	old_ref<=clkref;
+
+	if (do_ref) since_ref <= 0;
+	else if (~&since_ref) since_ref <= since_ref + 1'd1;
+	if (q == 4'd15) own_cycle <= 1;
+	if (~old_ref & clkref) own_cycle <= 0;
 
 	if(q==STATE_IDLE) begin
 		rd_rdy <= 1;
@@ -115,7 +138,7 @@ always @(posedge clk) begin
 		else   rd_rdy <= 1;
 	end
 
-	q <= q + 1'd1;
+	if (!rfc_wait) q <= q + 1'd1;
 	if(~old_ref & clkref) q <= 0;
 end
 
@@ -125,7 +148,6 @@ localparam MODE_LDM    = 2'b10;
 localparam MODE_PRE    = 2'b11;
 
 // initialization 
-reg [1:0] mode;
 always @(posedge clk) begin
 	reg [4:0] reset=5'h1f;
 	reg init_old=0;
@@ -158,10 +180,12 @@ always @(posedge clk) begin
 
 	SDRAM_DQ <= 16'hZZZZ;
 	casex({ram_req,wr,mode,q})
-		{2'b1X, MODE_NORMAL, STATE_START}: {SDRAM_nRAS, SDRAM_nCAS, SDRAM_nWE} <= CMD_ACTIVE;
+		{2'b1X, MODE_NORMAL, STATE_START}: if (!rfc_wait) {SDRAM_nRAS, SDRAM_nCAS, SDRAM_nWE} <= CMD_ACTIVE;
+		                                   else {SDRAM_nRAS, SDRAM_nCAS, SDRAM_nWE} <= CMD_NOP;
 		{2'b11, MODE_NORMAL, STATE_CONT }: {SDRAM_nRAS, SDRAM_nCAS, SDRAM_nWE, SDRAM_DQ} <= {CMD_WRITE, data};
 		{2'b10, MODE_NORMAL, STATE_CONT }: {SDRAM_nRAS, SDRAM_nCAS, SDRAM_nWE} <= CMD_READ;
-		{2'b0X, MODE_NORMAL, STATE_START}: {SDRAM_nRAS, SDRAM_nCAS, SDRAM_nWE} <= CMD_AUTO_REFRESH;
+		{2'b0X, MODE_NORMAL, STATE_START}: if (do_ref) {SDRAM_nRAS, SDRAM_nCAS, SDRAM_nWE} <= CMD_AUTO_REFRESH;
+		                                   else {SDRAM_nRAS, SDRAM_nCAS, SDRAM_nWE} <= CMD_NOP;
 
 		// init
 		{2'bXX,    MODE_LDM, STATE_START}: {SDRAM_nRAS, SDRAM_nCAS, SDRAM_nWE} <= CMD_LOAD_MODE;

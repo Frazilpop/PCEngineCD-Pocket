@@ -2,7 +2,8 @@
 // slot, rd_rdy and we_ack at STATE_READY, so a game sees the Pocket's timing), with
 // memory in place of the MT48LC16M16's pins. 16 MB: the system card in bank 0's first
 // half ({3'b000, a}), CD RAM and the Arcade Card in its second ({3'b001, a}). No
-// refresh, which the real one does in the idle slots, where nothing waits on it.
+// refresh in the array; where the real one refreshes (do_ref, as rtl/sdram.sv's) is
+// tracked below for its timing.
 
 module sdram
 (
@@ -52,10 +53,19 @@ reg        b;
 reg        ram_req = 0;
 reg        old_ref;
 
+// rtl/sdram.sv's refresh: in an idle slot of a cycle a clkref started, or of one that
+// wrapped on its own once REF_DUE clocks have gone since the last
+localparam [8:0] REF_DUE = 9'd256;
+reg  [8:0] since_ref = 0;
+reg        own_cycle = 0;
+localparam [8:0] TRFC = 9'd5;
+wire       do_ref = !ram_req && q == STATE_START && (!own_cycle || since_ref >= REF_DUE);
+wire       rfc_wait = ram_req && q == STATE_START && since_ref < TRFC;	// rtl/sdram.sv's hold for tRFC
+
 wire [22:0] word = {bank[0], a[22:1]};
 
 // The chip's own timing, which an array can't show: the controller refreshes in an idle
-// slot (q at START with nothing asked), and a clkref resets q wherever it is, so an ACTIVE
+// slot (do_ref), and a clkref resets q wherever it is, so an ACTIVE
 // can follow a REFRESH or another ACTIVE too soon. Each such ACTIVE is counted and named;
 // with +strict (SIM_SDRAM_STRICT=1) its read gives what the data bus last carried and its
 // write is lost, as a chip that ignored the command would. tRC and tRFC: 6 clocks of 85.9 MHz.
@@ -67,7 +77,7 @@ integer    viol = 0;
 initial strict = $test$plusargs("strict");
 always @(posedge clk) begin
 	cyc <= cyc + 1'd1;
-	if (q == STATE_START && cyc > 64) begin
+	if (q == STATE_START && cyc > 64 && !rfc_wait) begin
 		if (ram_req) begin
 			bad <= (cyc - last_ref < TRC) || (cyc - last_act < TRC);
 			if ((cyc - last_ref < TRC) || (cyc - last_act < TRC)) begin
@@ -78,13 +88,18 @@ always @(posedge clk) begin
 			end
 			last_act <= cyc;
 		end
-		else last_ref <= cyc;
+		else if (do_ref) last_ref <= cyc;
 	end
 	if (q == STATE_READY && ~wr && ram_req && !(strict && bad)) last_dq <= mem[word];
 end
 
 always @(posedge clk) begin
 	old_ref <= clkref;
+
+	if (do_ref) since_ref <= 0;
+	else if (~&since_ref) since_ref <= since_ref + 1'd1;
+	if (q == 4'd15) own_cycle <= 1;
+	if (~old_ref & clkref) own_cycle <= 0;
 
 	if(q==STATE_IDLE) begin
 		rd_rdy <= 1;
@@ -124,7 +139,7 @@ always @(posedge clk) begin
 		else dout <= a[0] ? mem[word][15:8] : mem[word][7:0];
 	end
 
-	q <= q + 1'd1;
+	if (!rfc_wait) q <= q + 1'd1;
 	if(~old_ref & clkref) q <= 0;
 end
 
