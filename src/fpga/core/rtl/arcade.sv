@@ -114,8 +114,13 @@ always @(posedge CLK) begin
 	end
 end
 
-// the chain: each port's base, offset, increment and control, then the rest
-wire [303:0] ss_v = {3'd0, rotate_bits, shift_bits, shift_latch, ena,
+// the chain: each port's base, offset, increment and control, then the rest. Its top 3 bits
+// are a register of their own, as every chain's padding is: 19 moves of 16 bits bring a
+// chain of 304 back to where it was only if all 304 are kept. A constant 0 there lost the
+// top 3 bits of every word, a port's auto-increment among them, in the file and in the
+// running console alike.
+reg  [2:0] ss_pad = 0;
+wire [303:0] ss_v = {ss_pad, rotate_bits, shift_bits, shift_latch, ena,
                      port[3].base, port[3].offset, port[3].increment, port[3].control,
                      port[2].base, port[2].offset, port[2].increment, port[2].control,
                      port[1].base, port[1].offset, port[1].increment, port[1].control,
@@ -193,11 +198,11 @@ always @(posedge CLK) begin
 		end
 	end
 	if (SS_SHIFT) begin
-		{rotate_bits, shift_bits, shift_latch, ena,
+		{ss_pad, rotate_bits, shift_bits, shift_latch, ena,
 		 port[3].base, port[3].offset, port[3].increment, port[3].control,
 		 port[2].base, port[2].offset, port[2].increment, port[2].control,
 		 port[1].base, port[1].offset, port[1].increment, port[1].control,
-		 port[0].base, port[0].offset, port[0].increment, port[0].control} <= ss_n[300:0];
+		 port[0].base, port[0].offset, port[0].increment, port[0].control} <= ss_n;
 	end
 end
 

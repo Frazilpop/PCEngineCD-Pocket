@@ -303,7 +303,8 @@ static void frame_done() {
     for (auto &c : pc_count) v.push_back({c.second, c.first});
     std::sort(v.rbegin(), v.rend());
     printf("pc: frame %ld, %zu addresses:", rel_frame, v.size());
-    for (size_t i = 0; i < v.size() && i < 12; i++) printf(" %06x*%u", v[i].second, v[i].first);
+    static const size_t pc_top = atoi(getenv("SIM_PCTRACE")) > 0 ? atoi(getenv("SIM_PCTRACE")) : 12;
+    for (size_t i = 0; i < v.size() && i < pc_top; i++) printf(" %06x*%u", v[i].second, v[i].first);
     printf("  CD {IRQ_N, DTR_EN, DTR, DTD_EN, DTD, SUBCD_EN, SUBCD, END_EN, END, HALF_EN, HALF, REQ_N} %03x, IRQ_N low %u clocks; at $E736:", top->dbg_cd, pc_irq_clocks);
     for (auto &c : pc_cd_at_irq) printf(" %03x*%u", c.first, c.second);
     printf("\n");

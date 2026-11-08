@@ -41,7 +41,14 @@ A Memory off the Pocket's card loads too: cut off the Pocket's 0x254-byte header
 picture, give the run the card's disc and system card, and `SIM_CARD_ROOT=/Volumes/<card>` so the
 drive's block, which names the card's files from `/Assets` on, opens them there. `SIM_PCTRACE=1`
 then shows where the CPU goes after the let-go: each frame's fetches by address, the CD's interrupt
-bits, and the way in to the first fetch from the CPU's RAM or the system card's IRQ2/BRK entry.
+bits, and the way in to the first fetch from the CPU's RAM or the system card's IRQ2/BRK entry;
+`SIM_PCTRACE=N` lists a frame's N busiest addresses, 12 by default. With the card out of the
+reader, `SIM_CARD_ROOT` can be a folder whose `Assets/pcecd/common/<disc>` links to the disc's
+folder in `roms/`.
+
+**A chain on its own.** `tools/chain-test.sh` writes random words into the Arcade Card's chain
+(`src/sim/chains/arcade_tb.sv`) and reads them back twice as a save does: every bit has to come
+back. A real file can't show a chain that drops bits, as its read-back drops the same ones.
 
 **The SDRAM's timing.** `sdram_sim.sv` counts every ACTIVE that comes less than 6 clocks of 85.9 MHz
 after a refresh or another ACTIVE (`sdram:` lines, the first 20 and every 1000th), which `sdram.sv`
