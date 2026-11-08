@@ -735,9 +735,10 @@ int main(int argc, char **argv) {
   drive_open(card_path.c_str(), disc_path.c_str(), out_dir.c_str());
   sim_tick(2000);
 
-  // core_top.v holds the Pocket's boot status until this, and the slots load after it
-  while (!top->psram_ready) sim_tick(1000);
-  printf("PSRAM ready at %.1f ms, %s, %u timing faults\n", clocks * 1e3 / CLK_HZ, top->psram_mem_ok ? "its test words read back" : "ITS TEST WORDS DID NOT READ BACK", top->psram_violations);
+  // core_top.v holds the Pocket's boot status until the MB128's chip is set up, and the
+  // slots may load straight after it, the ADPCM chip's clear still going on
+  while (!top->psram_ready) sim_tick(100);
+  printf("PSRAM ready at %.2f ms, %u timing faults\n", clocks * 1e3 / CLK_HZ, top->psram_violations);
   fflush(stdout);
   if (!save_in.empty()) save_load(save_in);
 

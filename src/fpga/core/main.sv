@@ -128,7 +128,8 @@ module pce (
     output wire         cram1_ub_n,
     output wire         cram1_lb_n,
 
-    // both chips cleared, and both chips' test words back
+    // the MB128's chip set up, which core_top.v's boot status waits on (the simulation loads
+    // the save after it); and both chips' test words back
     output wire         psram_ready,
     output wire         psram_mem_ok,
     // each chip apart: {ADPCM's cleared, MB128's cleared, ADPCM's test words, MB128's}
@@ -1090,7 +1091,7 @@ end
       .cram_lb_n(cram1_lb_n)
   );
 
-  assign psram_ready = mb128_ready & adpcm_ready;
+  assign psram_ready = mb128_ready;
   assign psram_mem_ok = mb128_mem_ok & adpcm_mem_ok;
   assign psram_status = {adpcm_ready, mb128_ready, adpcm_mem_ok, mb128_mem_ok};
 

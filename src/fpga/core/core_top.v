@@ -460,12 +460,15 @@ parameter CMD_REG_ADDRESS 			= 8'hf8;
 
 	// bridge host commands
 	// synchronous to clk_74a
-	// Held until the MB128's PSRAM is clear, as the Pocket loads the save after boot
-	// (mb128_psram.sv). Not the ADPCM chip's: a build that waited on both never started on
-	// the Pocket (5 Nov 2026), and its clear ends before the console leaves reset anyway.
+	// Held until the MB128's PSRAM is set up, about 0.2 ms after the lock, as the Pocket may
+	// load the save straight after boot (mb128_psram.sv). Up to 8 Nov 2026 it was held 14 ms,
+	// for a clear of the whole chip, and the Pocket's start gave "Error in framework, RS:
+	// Host commands ignored" on many starts; the template holds only for the lock. The lock
+	// through a synchroniser, as the template has it: it comes from another clock.
 	wire [3:0] psram_status, psram_status_s;
-	wire status_boot_done = pll_core_locked & psram_status_s[2];
-	wire status_setup_done = pll_core_locked & psram_status_s[2];  // rising edge triggers a target command
+	wire pll_core_locked_s;		// (its synch_3 is after the PLL, below)
+	wire status_boot_done = pll_core_locked_s & psram_status_s[2];
+	wire status_setup_done = pll_core_locked_s & psram_status_s[2];  // rising edge triggers a target command
 	wire status_running = reset_n;  // we are running as soon as reset_n goes high
 
 	wire            dataslot_requestread;
@@ -1283,6 +1286,6 @@ MPU_AFP_CORE #(
       .locked(pll_core_locked)
   );
 
-
+  synch_3 pll_locked_sync (pll_core_locked, pll_core_locked_s, clk_74a);
 
 endmodule

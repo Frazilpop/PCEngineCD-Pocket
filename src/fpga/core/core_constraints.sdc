@@ -15,6 +15,9 @@ set_clock_groups -asynchronous \
  -group { ic|mp1|mf_pllbase_inst|altera_pll_i|general[3].gpll~PLL_OUTPUT_COUNTER|divclk } \
  -group { ic|mp1|mf_pllbase_inst|altera_pll_i|general[5].gpll~PLL_OUTPUT_COUNTER|divclk }
 
+# the clocks' jitter counted in every path, as the sister cores have it
+derive_clock_uncertainty
+
 set_multicycle_path -from {ic|pce|sdram|*} -to [get_clocks {*|mp1|mf_pllbase_inst|altera_pll_i|*[1].*|divclk}] -start -setup 2
 set_multicycle_path -from {ic|pce|*} -to [get_clocks {*|mp1|mf_pllbase_inst|altera_pll_i|*[1].*|divclk}] -start -hold 1
 set_multicycle_path -from {ic|pce|*} -to [get_clocks {*|mp1|mf_pllbase_inst|altera_pll_i|*[1].*|divclk}] -start -setup 2
