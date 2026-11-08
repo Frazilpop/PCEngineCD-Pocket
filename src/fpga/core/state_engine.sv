@@ -291,10 +291,12 @@ initial begin
 end
 
 assign keep  = st != S_IDLE;
-// A save blanks the frozen states, from the freeze to the let-go, as the VDC draws them with
-// the vertical blank's registers and none of the game's raster changes (R-Type's sprites,
-// Exile II's top half): the game's last frame shows while the clean point is sought.
-assign blank = from_load ? st != S_IDLE : (st >= S_FREEZE && st <= S_GO);
+// A save blanks the picture from its ask to the let-go: the frozen states as the VDC draws
+// them with the vertical blank's registers and none of the game's raster changes (R-Type's
+// sprites, Exile II's top half), and the frames before them while the drive parks and the
+// clean point is sought. Blanked from the freeze alone, a save on the Pocket went black, then
+// showed the game for a moment, then black again. A load blanks from its stop to its let-go.
+assign blank = st != S_IDLE;
 assign drv_load = from_load;
 
 wire [3:0]  w_chain = (w_a - W_CHAINS) >> 6;
