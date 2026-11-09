@@ -507,6 +507,8 @@ parameter CMD_REG_ADDRESS 			= 8'hf8;
 	wire savestate_load_err;
 
 	wire osnotify_inmenu;
+	wire [15:0] host_cmd_last;
+	wire host_cmd_p0, host_cmd_tog;
 
 	wire     [31:0] rtc_epoch_seconds;
 	wire     [31:0] rtc_date_bcd;
@@ -602,6 +604,9 @@ core_bridge_cmd icb (
     .savestate_load_err     		( savestate_load_err ),
 
     .osnotify_inmenu        		( osnotify_inmenu ),
+    .host_cmd_last          		( host_cmd_last ),
+    .host_cmd_p0            		( host_cmd_p0 ),
+    .host_cmd_tog           		( host_cmd_tog ),
     
     .target_dataslot_read       	( target_dataslot_read ),
     .target_dataslot_write      	( target_dataslot_write ),
@@ -964,11 +969,25 @@ MPU_AFP_CORE #(
   always @(posedge clk_74a) if (bridge_wr && bridge_addr == 32'hF0000004) ss_setting <= {bridge_wr_data[3], bridge_wr_data[1]};
   synch_3 #(.WIDTH(2)) ss_setting_sync (ss_setting, {ss_set_mb128, ss_set_ac}, clk_sys_42_95);
 
-  // The Pocket's menu open (host command 0x00B0), for a save's black: the Pocket closes its menu
-  // and shows the game for a frame or two before it asks for a Memory (state_engine.sv's blank).
-  // The console runs on behind the menu as before.
+  // The Pocket's menu open (host command 0x00B0), recorded in a save's header; the console runs
+  // on behind the menu as before.
   wire ss_menu;
   synch_3 #(.WIDTH(1)) ss_menu_sync (osnotify_inmenu, ss_menu, clk_sys_42_95);
+
+  // Each host command as it starts, on clk_sys: a pulse with the command and its first
+  // parameter's bit 0, taken two clocks after the toggle so the held command has settled.
+  // A save's header records what came before its ask, and a Savestate query (0x00A0 without
+  // its start bit) blanks the picture until the ask (state_engine.sv).
+  wire [17:0] ss_cmd_s;
+  synch_3 #(.WIDTH(18)) ss_cmd_sync ({host_cmd_tog, host_cmd_p0, host_cmd_last}, ss_cmd_s, clk_sys_42_95);
+  reg   [1:0] ss_cmd_tog_d = 0;
+  reg         ss_cmd_new = 0;
+  reg  [16:0] ss_cmd = 0;
+  always @(posedge clk_sys_42_95) begin
+    ss_cmd_tog_d <= {ss_cmd_tog_d[0], ss_cmd_s[17]};
+    ss_cmd_new <= 0;
+    if (ss_cmd_tog_d[1] != ss_cmd_tog_d[0]) begin ss_cmd_new <= 1; ss_cmd <= ss_cmd_s[16:0]; end
+  end
 
   assign savestate_supported   = 1'b1;
   assign savestate_addr        = 32'h40000000;
@@ -1176,6 +1195,8 @@ MPU_AFP_CORE #(
 		.SS_SAVE						(ss_save),
 		.SS_LOAD						(ss_load),
 		.SS_MENU						(ss_menu),
+		.SS_CMD_NEW					(ss_cmd_new),
+		.SS_CMD						(ss_cmd),
 		.SS_GO						(ss_go),
 		.SS_STATUS					(ss_status),
 		.SS_ADDR						(ss_addr),

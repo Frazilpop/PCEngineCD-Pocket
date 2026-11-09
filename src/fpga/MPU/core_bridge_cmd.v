@@ -64,6 +64,12 @@ input   wire    [31:0]  savestate_maxloadsize,
 
 output  reg             osnotify_inmenu,
 
+// every host command as it starts, for the save-state header's record of what the Pocket
+// sent before a save: the command, its first parameter's bit 0, and a toggle on each
+output  reg     [15:0]  host_cmd_last,
+output  reg             host_cmd_p0,
+output  reg             host_cmd_tog,
+
 output  reg             savestate_start,        // core should detect rising edge on this,
 input   wire            savestate_start_ack,    // and then assert ack for at least 1 cycle
 input   wire            savestate_start_busy,   // assert constantly while in progress after ack
@@ -200,6 +206,9 @@ initial begin
     savestate_start <= 0;
     savestate_load <= 0;
     osnotify_inmenu <= 0;
+    host_cmd_last <= 0;
+    host_cmd_p0 <= 0;
+    host_cmd_tog <= 0;
     
     status_setup_done_queue <= 0;
     target_dataslot_read_queue <= 0;
@@ -336,6 +345,9 @@ always @(posedge clk) begin
             host_cmd_start <= 0;
             // save the command in case it gets clobbered later
             host_cmd <= host_cmd_startval;
+            host_cmd_last <= host_cmd_startval;
+            host_cmd_p0 <= host_20[0];
+            host_cmd_tog <= ~host_cmd_tog;
             hstate <= ST_PARSE;
         end
     

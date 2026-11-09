@@ -32,6 +32,8 @@ module state_engine (
 	input  wire        SS_SAVE,
 	input  wire        SS_LOAD,
 	input  wire        menu,				// the Pocket's menu open
+	input  wire        cmd_new,			// a host command started
+	input  wire [16:0] cmd,				// it, with its first parameter's bit 0 at bit 16
 	input  wire        SS_GO,
 	output reg   [1:0] SS_STATUS = 0,
 	input  wire [20:0] SS_ADDR,
@@ -60,7 +62,7 @@ module state_engine (
 	output reg         snap = 0,			// the VDC's snapshot taken, and put back
 	output reg         rest = 0,
 	output wire        keep,				// not idle: the console's resets held off
-	output wire        blank,				// a save or a load under way, or the menu just closed: the picture blanked
+	output wire        blank,				// a save or a load under way, or a Savestate query just come: the picture blanked
 	input  wire        busy,				// something on its way (the VDC's port or a DMA, the VCE's port)
 	input  wire        freeze_ok,			// the ADPCM memory has nothing in flight
 
@@ -254,26 +256,6 @@ always @(posedge clk) begin
 	if (vbl & ~vbl_old) frame <= frame + 1'd1;
 end
 
-// ---- the Pocket's menu ----
-// The picture black for MENU_HOLD frames after the menu closes, so a Memory's save, which the
-// Pocket asks for a frame or two after, is black from the menu to its let-go. The save's
-// header records, at word 22, the menu open at the ask (bit 15), the menu seen open since
-// power-up (bit 14), and the frames since it last closed (saturating at 0x3FFF); and at word
-// 23 the frames from the ask to the freeze.
-localparam [3:0] MENU_HOLD = 4'd10;
-reg        menu_old = 0, menu_seen = 0;
-reg  [3:0] menu_hold = 0;
-reg [13:0] menu_since = 14'h3FFF;
-always @(posedge clk) begin
-	menu_old <= menu;
-	if (menu) menu_seen <= 1;
-	if (~menu & menu_old) begin menu_hold <= MENU_HOLD; menu_since <= 0; end
-	else if (vbl & ~vbl_old) begin
-		if (menu_hold) menu_hold <= menu_hold - 1'd1;
-		if (~&menu_since) menu_since <= menu_since + 1'd1;
-	end
-end
-
 // ---- the machine ----
 localparam [3:0] S_IDLE = 0, S_SEEK = 1, S_PARK = 2, S_FREEZE = 3, S_FROZEN = 4, S_UNWIND = 5,
                  S_GO_FRAME = 6, S_GO_FETCH = 7, S_GO_POS = 8, S_GO = 9, S_LOADING = 10, S_LWAIT = 11;
@@ -285,6 +267,8 @@ reg  [11:0] rec_h = 0;
 reg         rec_fast = 0;
 reg  [31:0] rec_frame = 0;
 reg  [15:0] rec_menu = 0;				// the menu at the save's ask (word 22)
+reg  [15:0] rec_q = 0, rec_qn = 0;		// the queries before it (words 24, 25)
+reg  [15:0] rec_cmd = 0, rec_cmdf = 0;	// the last other command and the frames since (26, 27)
 reg  [31:0] ask_frame = 0;				// the frame of the save's ask
 reg   [5:0] cnt [0:NCHAIN-1];			// each chain's words moved since its start, mod its length
 reg  [12:0] fcnt [0:2];					// each FIFO's count, as the file has it
@@ -296,6 +280,47 @@ reg         go_pend = 0;				// SS_GO, kept until the word under way is done
 reg         save_pend = 0;				// a save asked while a load is still going in
 reg         ld_fast = 0;				// a header's, before its load starts
 wire        at_rec = vpos == rec_v && hpos == rec_h;
+
+// ---- the Pocket's menu and commands ----
+// What the Pocket did before a save's ask, recorded in its header: at word 22 the menu open
+// at the ask (bit 15), the menu seen open since power-up (bit 14) and the frames since it last
+// closed (saturating at 0x3FFF); at word 23 the frames from the ask to the freeze; at word 24
+// a Savestate query (0x00A0 without its start bit, the engine idle) seen since power-up (bit
+// 15) and the lines since the last (saturating at 0x7FFF); at word 25 the idle queries since
+// the last ask; at words 26 and 27 the last host command other than a status request or a
+// Savestate command, and the frames since it (saturating).
+//
+// A quick save (the Analogue button and Up) never opens the menu, and on the Pocket the game
+// still showed for a frame or two between a black frame and the save's black (the tenth
+// play), so the picture is held black from an idle query for up to Q_HOLD lines, in case the
+// Pocket asks it before the save. A 10-frame black after the menu closed, tried for the
+// tenth play, never came before a quick save and was too long a black after an ordinary close.
+localparam [14:0] Q_HOLD = 15'd1578;		// 6 frames of 263 lines
+reg        menu_old = 0, menu_seen = 0;
+reg [13:0] menu_since = 14'h3FFF;
+reg  [9:0] vpos_old = 0;
+reg        q_seen = 0;
+reg [14:0] q_lines = 15'h7FFF;
+reg [15:0] q_count = 0;
+reg [15:0] cmd_other = 0;
+reg [15:0] other_frames = 16'hFFFF;
+wire       is_query = cmd_new && cmd == {1'b0, 16'h00A0};
+always @(posedge clk) begin
+	menu_old <= menu;
+	vpos_old <= vpos;
+	if (menu) menu_seen <= 1;
+	if (~menu & menu_old) menu_since <= 0;
+	else if (vbl & ~vbl_old && ~&menu_since) menu_since <= menu_since + 1'd1;
+	if (is_query && st == S_IDLE) begin
+		q_seen <= 1; q_lines <= 0;
+		if (~&q_count) q_count <= q_count + 1'd1;
+	end
+	else if (vpos != vpos_old && ~&q_lines) q_lines <= q_lines + 1'd1;
+	if (SS_SAVE && st == S_IDLE) q_count <= 0;
+	if (cmd_new && cmd[15:0] != 16'h0000 && cmd[15:0] != 16'h00A0) begin cmd_other <= cmd[15:0]; other_frames <= 0; end
+	else if (vbl & ~vbl_old && ~&other_frames) other_frames <= other_frames + 1'd1;
+end
+wire q_blank = q_seen && q_lines < Q_HOLD;
 
 // the word under way: w_t counts its clocks
 reg         w_busy = 0, w_wr = 0;
@@ -320,9 +345,9 @@ assign keep  = st != S_IDLE;
 // clean point is sought. Blanked from the freeze alone, a save on the Pocket went black, then
 // showed the game for a moment, then black again. A load blanks from its stop to its let-go.
 // Blanked from the ask, the Pocket still showed a black frame, then the game for a frame or
-// two, then the save's black (the ninth play): the gap is the Pocket's, between its menu's
-// close and its ask, so the picture is held black from the close as well.
-assign blank = st != S_IDLE || menu_hold != 0;
+// two, then the save's black (the ninth play): the gap is before the ask, so the picture is
+// held black from a Savestate query as well, in case the Pocket asks one first.
+assign blank = st != S_IDLE || q_blank;
 assign drv_load = from_load;
 
 wire [3:0]  w_chain = (w_a - W_CHAINS) >> 6;
@@ -353,6 +378,10 @@ function [15:0] hdr_word(input [6:0] k);
 	7'd21: hdr_word = {4'd0, rec_h};
 	7'd22: hdr_word = rec_menu;
 	7'd23: hdr_word = rec_frame[15:0] - ask_frame[15:0];
+	7'd24: hdr_word = rec_q;
+	7'd25: hdr_word = rec_qn;
+	7'd26: hdr_word = rec_cmd;
+	7'd27: hdr_word = rec_cmdf;
 	default: hdr_word = 16'd0;
 	endcase
 endfunction
@@ -569,6 +598,10 @@ always @(posedge clk) begin
 			if (SS_SAVE) begin
 				SS_STATUS <= 1;
 				rec_menu <= {menu, menu_seen, menu_since};
+				rec_q <= {q_seen, q_lines};
+				rec_qn <= q_count;
+				rec_cmd <= cmd_other;
+				rec_cmdf <= other_frames;
 				ask_frame <= frame;
 				drv_park <= 1;
 				tmr <= 0;

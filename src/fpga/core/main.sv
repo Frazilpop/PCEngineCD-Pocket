@@ -158,6 +158,8 @@ module pce (
     input  wire        SS_SAVE,
     input  wire        SS_LOAD,
     input  wire        SS_MENU,			// the Pocket's menu open (its 0x00B0 notice), on clk_sys
+    input  wire        SS_CMD_NEW,			// a host command started, on clk_sys
+    input  wire [16:0] SS_CMD,			// it, with its first parameter's bit 0 at bit 16
     input  wire        SS_GO,
     output wire  [1:0] SS_STATUS,
     input  wire [20:0] SS_ADDR,
@@ -405,6 +407,8 @@ module pce (
       .SS_SAVE(SS_SAVE),
       .SS_LOAD(SS_LOAD),
       .menu(SS_MENU),
+      .cmd_new(SS_CMD_NEW),
+      .cmd(SS_CMD),
       .SS_GO(SS_GO),
       .SS_STATUS(SS_STATUS),
       .SS_ADDR(SS_ADDR),
