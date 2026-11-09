@@ -50,16 +50,14 @@ PY
     "$GHDL" -a "${A[@]}" "$S/bram_sim.vhd" 2>> ghdl.log || { tail -20 ghdl.log; exit 1; }
     for f in "${VHDL[@]}"; do
       b=$(basename "$f")
-      # Three things Quartus lets by and GHDL doesn't, written out in build's copies; rtl/ is untouched.
+      # Two things Quartus lets by and GHDL doesn't, written out in build's copies; rtl/ is untouched.
       # - huc6270.vhd: a reset value of two bits for a four-bit field (as tools/vdc-compare.sh).
-      # - psg.vhd: xor "1000" on five bits. The right-hand end is taken as bit 0: only the LFO uses it.
-      #   Quartus 21.1 reads it the same way: the line synthesised alone inverts bit 3 and no other.
       # - psg.vhd: CH(CHSEL).x <= in one process with other fields of CH in another. GHDL takes an
       #   assignment through a run-time index as driving all of CH, so each is written as a loop
       #   over the channels, the same registers. A CHSEL of 6 or 7 then writes nothing.
       sed -E "s/'0',\"00\",'0','0',\"00\",/'0',\"0000\",'0','0',\"00\",/" "$f" > "vhd/$b"
       if [ "$b" = psg.vhd ]; then
-        perl -pi -e 's/xor "1000";/xor "01000";/; s/^(\s*)CH\(CHSEL\)(\.\S+(?:\(.*?\))?\s*<=.*;)\s*$/$1for i in 0 to 5 loop if i = CHSEL then CH(i)$2 end if; end loop;\n/' "vhd/$b"
+        perl -pi -e 's/^(\s*)CH\(CHSEL\)(\.\S+(?:\(.*?\))?\s*<=.*;)\s*$/$1for i in 0 to 5 loop if i = CHSEL then CH(i)$2 end if; end loop;\n/' "vhd/$b"
       fi
       "$GHDL" -a "${A[@]}" "vhd/$b" 2>> ghdl.log || { tail -20 ghdl.log; exit 1; }
     done

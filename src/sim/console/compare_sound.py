@@ -289,7 +289,12 @@ def lfo_check(sim_psg, mame_psg):
     b = [b[(i + shift) % 32] for i in range(32)]
     print('  sim: ' + ' '.join(f'{v:.0f}' for v in a))
     print('  MAME:' + ' '.join(f'{v:.0f}' for v in b))
-    print(f'  {max(abs(x - y) for x, y in zip(a, b)):.1f} Hz apart at most, lined up')
+    # The bins either side of the saw's jump take some of each side, by where the bin's edge falls
+    # in each run, so they are told apart from the rest.
+    jump = {(i + d) % 32 for r in (a, b) for i in range(32) if r[(i + 1) % 32] - r[i] > 20 for d in (0, 1)}
+    rest = [abs(a[i] - b[i]) for i in range(32) if i not in jump]
+    print(f'  {max(abs(x - y) for x, y in zip(a, b)):.1f} Hz apart at most, lined up; '
+          f'{max(rest):.1f} Hz away from the saw\'s jump')
 
 
 def main():

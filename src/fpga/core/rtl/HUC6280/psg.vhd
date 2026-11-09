@@ -528,7 +528,7 @@ begin
 				CH(i).LFO_ADD <= (others => '0');
 			end loop;
 		else
-			DATA := WF_Q(1) xor "1000";
+			DATA := WF_Q(1) xor "10000";	-- the wave minus 16, as MAME and Geargrafx; MiSTer's "1000" flips bit 3
 			CH(0).LFO_ADD(11 downto 8) <= DATA(4) & DATA(4) & DATA(4) & DATA(4);
 			case CH(1).LFCTL is
 			when "01" =>   CH(0).LFO_ADD(7 downto 0) <= DATA(4) & DATA(4) & DATA(4) & DATA;
