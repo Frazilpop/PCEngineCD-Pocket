@@ -38,7 +38,9 @@
 // Out, in DIR: f_NNNNN.png for each frame saved (the picture as core_top.v gives it to
 // the Pocket, through the real line buffer), frames.txt (each frame's number, size, a
 // CRC of its pixels and its top-left pixel), audio.wav (main.sv's audio_l and audio_r,
-// 48 kHz), drive.log (the drive's commands with their frame and millisecond) and run.json.
+// 48 kHz), sources.wav (the chips' own sound before main.sv's filters and mix, five channels:
+// the PSG's left and right, CD audio's left and right, ADPCM; each the mean over its 48 kHz
+// sample, so the PSG's 3.58 MHz doesn't fold down), drive.log (the drive's commands with their frame and millisecond) and run.json.
 #include <algorithm>
 #include <chrono>
 #include <map>
@@ -152,6 +154,9 @@ static void save_write(const std::string &path) {
 static const uint32_t AUDIO_HZ = 48000, CLK_HZ = 42954545;
 static uint32_t audio_acc;
 static std::vector<int16_t> audio;
+static std::vector<int16_t> sources;		// sources.wav: the chips' own sound, each averaged over its 48 kHz sample
+static int64_t src_sum[5];
+static uint32_t src_n;
 
 static std::vector<uint32_t> line, frame;
 static std::vector<std::vector<uint32_t>> lines;
@@ -188,14 +193,14 @@ static bool write_png(const std::string &path, int w, int h, const std::vector<u
   fclose(f);
   return true;
 }
-static void write_wav(const std::string &path, const std::vector<int16_t> &s) {
+static void write_wav(const std::string &path, const std::vector<int16_t> &s, uint16_t ch = 2) {
   FILE *f = fopen(path.c_str(), "wb");
   if (!f) return;
   auto u32 = [&](uint32_t x) { fwrite(&x, 4, 1, f); };
   auto u16 = [&](uint16_t x) { fwrite(&x, 2, 1, f); };
   uint32_t bytes = s.size() * 2;
   fwrite("RIFF", 1, 4, f); u32(36 + bytes); fwrite("WAVEfmt ", 1, 8, f);
-  u32(16); u16(1); u16(2); u32(AUDIO_HZ); u32(AUDIO_HZ * 4); u16(4); u16(16);
+  u32(16); u16(1); u16(ch); u32(AUDIO_HZ); u32(AUDIO_HZ * 2 * ch); u16(2 * ch); u16(16);
   fwrite("data", 1, 4, f); u32(bytes);
   fwrite(s.data(), 2, s.size(), f);
   fclose(f);
@@ -213,13 +218,14 @@ static void finish() {
   running = false;
   if (!save_out.empty()) save_write(save_out);
   write_wav(out_dir + "/audio.wav", audio);
+  write_wav(out_dir + "/sources.wav", sources, 5);
   char drive[512];
   drive_summary(drive, sizeof drive);
   drive_close();
   double s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
   FILE *fj = fopen((out_dir + "/run.json").c_str(), "w");
   if (fj) {
-    // rom and region say which run this was
+    // rom and region are what the core's page reads for its Simulation card
     fprintf(fj, "{\"rom\":\"%s\",\"region\":\"%s\",\"card\":\"%s\",\"disc\":\"%s\",\"frames\":%ld,\"saved\":%d,\"seconds\":%.1f,\"mhz\":%.2f,\"mb128\":%s,\"psram_ok\":%s,\"psram_violations\":%u,\"adpcm_reads\":%u,\"adpcm_writes\":%u,\"drive\":%s}\n",
             json_escape(disc_path.empty() ? card_path : disc_path).c_str(), strstr(drive, "\"region_us\":true") ? "USA" : "Japan",
             json_escape(card_path).c_str(), json_escape(disc_path).c_str(), nframe, saved, s, clocks / s / 1e6, mb128_on ? "true" : "false",
@@ -602,10 +608,21 @@ void sim_tick(uint32_t n) {
     if (top->video_vs && !old_vs) frame_done();
     old_vs = top->video_vs;
 
+    if (running) {
+      // chip_snd is {psg_sl, psg_sr, cdda_sl, cdda_sr, adpcm_s}; sources.wav has them in that order
+      src_sum[0] += (int16_t)top->chip_snd[2];
+      src_sum[1] += (int16_t)(top->chip_snd[1] >> 16);
+      src_sum[2] += (int16_t)top->chip_snd[1];
+      src_sum[3] += (int16_t)(top->chip_snd[0] >> 16);
+      src_sum[4] += (int16_t)top->chip_snd[0];
+      src_n++;
+    }
     if (running && (audio_acc += AUDIO_HZ) >= CLK_HZ) {
       audio_acc -= CLK_HZ;
       audio.push_back((int16_t)top->audio_l);
       audio.push_back((int16_t)top->audio_r);
+      for (int k = 0; k < 5; k++) { sources.push_back((int16_t)(src_sum[k] / (int64_t)src_n)); src_sum[k] = 0; }
+      src_n = 0;
     }
 
     top->clk_mem = 0; top->eval();

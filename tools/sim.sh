@@ -1,7 +1,7 @@
 #!/bin/bash
 # The whole console in Verilator (src/sim/console): a system card and a disc in,
 # frames as PNGs and the sound as a WAV out, in build/sim_pce (src/sim/console/README.md).
-#   bash tools/sim.sh                                    the test card and test disc for 240 frames; checks what they report
+#   bash tools/sim.sh                                    the repo's test card and disc for 240 frames; checks what they report
 #   bash tools/sim.sh --card CARD --disc CUE [--frames N] [--every K] [--save F,F] [--press F:buttons[:N]] [--arcade] [--change F:CUE] [--reset F] [--mb128] [--save-in F] [--save-out F]
 #   NO_BUILD=1 bash tools/sim.sh ...                     a run on the build there is
 #   SIM_OUT=DIR NO_BUILD=1 bash tools/sim.sh ...         somewhere else, for several at once
@@ -53,6 +53,7 @@ PY
       # Three things Quartus lets by and GHDL doesn't, written out in build's copies; rtl/ is untouched.
       # - huc6270.vhd: a reset value of two bits for a four-bit field (as tools/vdc-compare.sh).
       # - psg.vhd: xor "1000" on five bits. The right-hand end is taken as bit 0: only the LFO uses it.
+      #   Quartus 21.1 reads it the same way: the line synthesised alone inverts bit 3 and no other.
       # - psg.vhd: CH(CHSEL).x <= in one process with other fields of CH in another. GHDL takes an
       #   assignment through a run-time index as driving all of CH, so each is written as a loop
       #   over the channels, the same registers. A CHSEL of 6 or 7 then writes nothing.

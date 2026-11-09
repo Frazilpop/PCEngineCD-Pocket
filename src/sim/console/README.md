@@ -65,13 +65,14 @@ access in 400 of those read the word before; with strict timing the simulation f
 `--press F:buttons[:N]` holds buttons on pad 1 from frame F for N frames (4 by default):
 `up down left right i ii select run`, joined with `+`.
 
-Out, in `build/sim_pce/` or `SIM_OUT`:
+Out, in `build/sim_pce/` or `SIM_OUT` (the core's page shows `build/sim_pce` in its Simulation card):
 
 | file | what |
 |---|---|
 | `f_NNNNN.png` | the frames asked for: the picture as `core_top.v` gives it to the Pocket, through the real `linebuffer.v` |
 | `frames.txt` | every frame: its number, size, a CRC of its pixels and its top-left pixel, for comparing two runs |
 | `audio.wav` | `main.sv`'s `audio_l`, `audio_r`, 16-bit stereo at 48 kHz |
+| `sources.wav` | the chips' own sound before `audio.sv`'s filters and mix, five channels at 48 kHz: the PSG's left and right, CD audio's left and right, ADPCM; each the mean over its sample, so the PSG's 3.58 MHz doesn't fold down |
 | `drive.log` | each command to the drive and each stage of its load, with the frame and the firmware's millisecond; another disc chosen, the tray opening and shutting, the console told, Reset core; each MB128 ident, read and write a game asks for |
 | `run.json` | the card and disc, the frames, the time, the speed, the drive's counters, the PSRAM's self-test and its timing faults (both chips), and the ADPCM memory's reads and writes, so a run that never touched it shows |
 
@@ -92,6 +93,8 @@ bash tools/mame-frames.sh 30 60 90                       # the test card and dis
 bash tools/mame-frames.sh --card CARD --disc CUE 300 600
 bash tools/mame-frames.sh --card CARD --disc CUE --press 40:run --arcade $(seq 1 1800)   # pad 1, and an Arcade Card Pro
 python3 -I src/sim/console/compare.py build/sim_pce build/mame_pce --sheet /tmp/pairs.png
+bash tools/mame-frames.sh --card CARD --disc CUE --wav build/mame_pce/audio.wav --sources build/mame_pce/src 600   # and its sound
+python3 -I src/sim/console/compare_sound.py build/sim_pce build/mame_pce                               # the two, chip by chip
 ```
 
 `compare.py` pairs each of the sim's frames with the MAME frame that shows the same, going forward
@@ -101,6 +104,15 @@ difference. At 5.37 MHz the sim's picture sits 8 dots right of MAME's left edge 
 the line buffer lost the first dot of every line) and 2 lines above its
 top, so the sim's top two lines aren't compared. `--arcade` in MAME takes Japan's 3.0 card, which its
 software list names by checksum; the `bios_3_0_jap.pce` used here is that card.
+
+**The sound** goes beside MAME's chip by chip: `--wav` records MAME's mix, `--sources` each chip's
+output from MAME's Lua sound hooks, and `compare_sound.py` pairs the stretches of each (start, length,
+the time from the one before, level against CD audio's full scale, pitch, the waveforms lined up) and
+fits each mix. `tools/testcard.py`'s `sound.pce` is the card for it (`--card build/sim/test/sound.pce
+--frames 420`): MAME runs it to the end, and its ADPCM tone is checked against the MSM5205's own
+decoding, as MAME 0.289's ADPCM is no reference. On 9 Nov 2026 CD audio was the disc's samples at the
+mix's 5/16, the PSG and ADPCM matched, and the one difference was the PSG's LFO, which is MiSTer's
+(docs/PLAN.md, *The simulation's sound against MAME's*).
 
 **What a real game does here, 3 Nov 2026** (docs/PLAN.md has it in full): Popful Mail, R-Type
 Complete CD and Mad Stalker with `--arcade` all reach their games, with no hang, and the frames match

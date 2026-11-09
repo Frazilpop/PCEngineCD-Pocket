@@ -2,7 +2,7 @@
 
     python3 -I tools/testcard.py build/sim/test
 
-Makes build/sim/test/card.pce and Test Disc.cue with its two files. Made here, a few
+Makes build/sim/test/card.pce and Test Disc.cue with its two files, and sound.pce (below). Made here, a few
 hundred bytes of HuC6280 code written out by hand, so the sim has a card and a disc that
 are the repo's own to commit (a system card and the games are never committed). It stands where a
 system card does and asks the drive what a game's boot does:
@@ -29,6 +29,14 @@ system card does and asks the drive what a game's boot does:
 The backdrop turns green when every check has passed and stays red if one fails, so the
 first pixel of each line of frames.txt says how it went (tools/sim.sh looks). The line for
 each check is on the screen, and the first failing one is where it stops.
+
+sound.pce is the same card with no checks, to set the simulation's sound beside MAME's
+(src/sim/console/compare_sound.py), as MAME stops the checks at ADPCM CPU. Over the PSG's
+440 Hz it resets the drive, writes 4K to the ADPCM chip's memory by the CPU, a 1 kHz tone
+in the MSM5205's own code (from the card's second 8K), and plays it at 16 kHz and then at
+6.4 kHz, where it is 400 Hz; sweeps the PSG's first channel with the LFO, the second channel
+a saw at volume 0, at each of the LFO's first two depths; and plays track 2. Its lines on the
+screen say which part is sounding.
 """
 import math
 import os
@@ -225,7 +233,7 @@ AD_OFFS_LO, AD_OFFS_HI, AD_DATA, AD_DMA, AD_STAT, AD_CTL, AD_RATE = 0x1808, 0x18
 KEY, HELD = 0x10 + 18, 0x10 + 19
 
 
-def build(total):
+def build(total, sound=False):
     a = Asm(0xE000)
 
     a.label('reset')
@@ -320,6 +328,8 @@ def build(total):
         strings.add(text)
 
     strings = set()
+    if sound:
+        sound_program(a, say)   # it ends in main, and the checks below are never reached
     say(1, 'PC ENGINE CD SIM TEST')
 
     # the drive's reset, which starts the firmware loading the disc
@@ -791,6 +801,125 @@ def build(total):
     return bytes(page).ljust(CARD_SIZE, b'\xFF')
 
 
+def sound_program(a, say):
+    """sound.pce's: each chip in turn, with nothing that can stop it."""
+    say(1, 'PC ENGINE CD SOUND TEST')
+    a.lda(0x00); a.sta_a(0x180F)    # no fade, as a system card leaves it: MAME's ADPCM is silent until then
+    a.lda(0x02); a.sta_a(CD_RST)
+    a.jsr('wait_frame')
+    a.lda(0x00); a.sta_a(CD_RST)
+    a.jsr('wait_frame')
+    say(3, 'UNIT READY')
+    a.label('s_tur')
+    a.jsr('wait_frame')
+    cmd(a, 'c_tur', 6, BUF)
+    a.lda_z(STAT); a.bne('s_tur')
+
+    # the tone, 4K by the CPU from 0, out of the card's second 8K on MPR3
+    say(4, 'ADPCM WRITE')
+    a.lda(0x01); a.tam(0x08)
+    a.lda(0x00); a.sta_z(PTR); a.lda(0x60); a.sta_z(PTR_H)
+    ad_set(a, 0x0000, 0x03, 0x02)
+    a.ldx(len(ADPCM_TONE) // 256)
+    a.ldy(0)
+    a.label('s_adw')
+    a.lda_iy(PTR); a.sta_a(AD_DATA)
+    a.label('s_adb')
+    a.lda_a(AD_STAT); a.and_(0x04); a.bne('s_adb')
+    a.iny(); a.bne('s_adw')
+    a.inc_z(PTR_H)
+    a.dex(); a.bne('s_adw')
+    for row, rate, text in ((5, 0x0E, 'ADPCM 16K'), (6, 0x0B, 'ADPCM 6K4')):
+        say(row, text)
+        a.lda(rate); a.sta_a(AD_RATE)
+        ad_set(a, 0x0000, 0x0C, 0x08)
+        ad_offs(a, 0x1000)
+        a.lda(0x10); a.sta_a(AD_CTL); a.lda(0x00); a.sta_a(AD_CTL)
+        a.lda(0x60); a.sta_a(AD_CTL)
+        a.lda(150); a.sta_z(TRIES)
+        a.label(f's_adp{row}')
+        a.jsr('wait_frame')
+        a.lda_a(AD_STAT); a.and_(0x08); a.beq(f's_adq{row}')
+        a.dec_z(TRIES); a.bne(f's_adp{row}')
+        a.label(f's_adq{row}')
+        a.lda(0x00); a.sta_a(AD_CTL)
+        wait_frames(a, 10)
+
+    # the LFO: the second channel a saw, 0 to 31, as the first channel's modulator
+    a.lda(1); a.sta_a(0x0800)
+    a.lda(0x40); a.sta_a(0x0804); a.lda(0x00); a.sta_a(0x0804)
+    a.ldx(0)
+    a.label('s_saw')
+    a.txa(); a.sta_a(0x0806)
+    a.inx(); a.cpx(32); a.bne('s_saw')
+    a.lda(0x00); a.sta_a(0x0802); a.lda(0x04); a.sta_a(0x0803)
+    a.lda(0x80); a.sta_a(0x0804); a.lda(0xFF); a.sta_a(0x0805)    # on at volume 0: it drives the LFO, unheard
+    a.lda(0x10); a.sta_a(0x0808)
+    for row, ctl, text in ((7, 0x01, 'LFO 1'), (8, 0x02, 'LFO 2')):
+        say(row, text)
+        a.lda(ctl); a.sta_a(0x0809)
+        wait_frames(a, 40)
+    a.lda(0x80); a.sta_a(0x0809)
+    a.lda(1); a.sta_a(0x0800); a.lda(0x00); a.sta_a(0x0804)
+    a.lda(0); a.sta_a(0x0800)
+    wait_frames(a, 10)
+
+    say(9, 'CD AUDIO')
+    cmd(a, 'c_sapsp', 10, BUF)
+    cmd(a, 'c_sapep', 10, BUF)
+    wait_frames(a, 45)
+    say(13, 'DONE')
+    a.jmp('main')
+
+
+MSM_STEPS = [int(16 * 1.1 ** i) for i in range(49)]
+MSM_ADJUST = [-1, -1, -1, -1, 2, 4, 6, 8]
+
+
+def msm5205_step(signal, index, n):
+    """One nibble through the MSM5205 (OKI ADPCM): the new 12-bit signal and step index."""
+    step = MSM_STEPS[index]
+    d = step >> 3
+    if n & 1: d += step >> 2
+    if n & 2: d += step >> 1
+    if n & 4: d += step
+    v = signal - d if n & 8 else signal + d
+    return max(-2048, min(2047, v)), max(0, min(48, index + MSM_ADJUST[n & 7]))
+
+
+def msm5205_decode(data):
+    """What the chip plays from data, high nibble first: compare_sound.py checks the sim by it."""
+    signal, index, out = 0, 0, []
+    for byte in data:
+        for n in (byte >> 4, byte & 15):
+            signal, index = msm5205_step(signal, index, n)
+            out.append(signal)
+    return out
+
+
+def msm5205_tone(hz=1000, rate=16000, amp=600, nbytes=4096):
+    """A sine in the MSM5205's ADPCM, each nibble the one whose decoded value comes nearest,
+    so what the chip plays is a tone."""
+    signal, index, nibbles = 0, 0, []
+    for i in range(nbytes * 2):
+        target = round(amp * math.sin(2 * math.pi * hz * i / rate))
+        n = min(range(16), key=lambda n: abs(msm5205_step(signal, index, n)[0] - target))
+        signal, index = msm5205_step(signal, index, n)
+        nibbles.append(n)
+    return bytes(nibbles[i] << 4 | nibbles[i + 1] for i in range(0, len(nibbles), 2))
+
+
+ADPCM_TONE = msm5205_tone()
+
+
+def wait_frames(a, n):
+    a.ldx(n)
+    label = f'wf{len(a.b)}'
+    a.label(label)
+    a.jsr('wait_frame')
+    a.dex(); a.bne(label)
+
+
 def ad_offs(a, value):
     a.lda(value & 0xFF); a.sta_a(AD_OFFS_LO); a.lda(value >> 8); a.sta_a(AD_OFFS_HI)
 
@@ -855,6 +984,11 @@ def main():
     total = write_disc(out)
     with open(os.path.join(out, 'card.pce'), 'wb') as f:
         f.write(build(total))
+    sound = bytearray(build(total, sound=True))
+    sound[0x2000:0x2000 + len(ADPCM_TONE)] = ADPCM_TONE      # bank 1, which the sound program puts on MPR3
+    with open(os.path.join(out, 'sound.pce'), 'wb') as f:
+        f.write(sound)
 
 
-main()
+if __name__ == '__main__':
+    main()
