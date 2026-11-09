@@ -669,8 +669,7 @@ module pce (
 
   // A save state's load blanks the picture from the header's match to the let-go: the VDC
   // runs on while VRAM, the SAT and the palette fill, and would draw them half written. A
-  // save blanks it from its ask to the let-go, and the picture is black for 10 frames after
-  // the Pocket's menu closes (state_engine.sv's blank).
+  // save blanks it from its ask to the let-go (state_engine.sv's blank).
   reg ss_blank_v = 0;
   always @(posedge clk_mem_85_91) ss_blank_v <= ss_blank;
 

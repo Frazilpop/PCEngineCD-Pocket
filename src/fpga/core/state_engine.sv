@@ -62,7 +62,7 @@ module state_engine (
 	output reg         snap = 0,			// the VDC's snapshot taken, and put back
 	output reg         rest = 0,
 	output wire        keep,				// not idle: the console's resets held off
-	output wire        blank,				// a save or a load under way, or a Savestate query just come: the picture blanked
+	output wire        blank,				// a save or a load under way: the picture blanked
 	input  wire        busy,				// something on its way (the VDC's port or a DMA, the VCE's port)
 	input  wire        freeze_ok,			// the ADPCM memory has nothing in flight
 
@@ -291,11 +291,11 @@ wire        at_rec = vpos == rec_v && hpos == rec_h;
 // Savestate command, and the frames since it (saturating).
 //
 // A quick save (the Analogue button and Up) never opens the menu, and on the Pocket the game
-// still showed for a frame or two between a black frame and the save's black (the tenth
-// play), so the picture is held black from an idle query for up to Q_HOLD lines, in case the
-// Pocket asks it before the save. A 10-frame black after the menu closed, tried for the
-// tenth play, never came before a quick save and was too long a black after an ordinary close.
-localparam [14:0] Q_HOLD = 15'd1578;		// 6 frames of 263 lines
+// still shows for a frame or two between a black frame and the save's black. Neither the menu
+// notice nor the query comes early enough to black from: a 10-frame black after the menu
+// closed never came before a quick save and was too long a black after an ordinary close, and
+// the one query before a quick save comes 2 lines before its ask (both tried and taken out,
+// the tenth and eleventh plays). So the flash is the Pocket's own, before it tells the core.
 reg        menu_old = 0, menu_seen = 0;
 reg [13:0] menu_since = 14'h3FFF;
 reg  [9:0] vpos_old = 0;
@@ -320,7 +320,6 @@ always @(posedge clk) begin
 	if (cmd_new && cmd[15:0] != 16'h0000 && cmd[15:0] != 16'h00A0) begin cmd_other <= cmd[15:0]; other_frames <= 0; end
 	else if (vbl & ~vbl_old && ~&other_frames) other_frames <= other_frames + 1'd1;
 end
-wire q_blank = q_seen && q_lines < Q_HOLD;
 
 // the word under way: w_t counts its clocks
 reg         w_busy = 0, w_wr = 0;
@@ -344,10 +343,9 @@ assign keep  = st != S_IDLE;
 // sprites, Exile II's top half), and the frames before them while the drive parks and the
 // clean point is sought. Blanked from the freeze alone, a save on the Pocket went black, then
 // showed the game for a moment, then black again. A load blanks from its stop to its let-go.
-// Blanked from the ask, the Pocket still showed a black frame, then the game for a frame or
-// two, then the save's black (the ninth play): the gap is before the ask, so the picture is
-// held black from a Savestate query as well, in case the Pocket asks one first.
-assign blank = st != S_IDLE || q_blank;
+// Blanked from the ask, the Pocket still shows a black frame, then the game for a frame or
+// two, then the save's black: the gap is before the ask and before anything the Pocket sends.
+assign blank = st != S_IDLE;
 assign drv_load = from_load;
 
 wire [3:0]  w_chain = (w_a - W_CHAINS) >> 6;
