@@ -15,6 +15,9 @@ bash tools/sim.sh --card CARD --disc CUE --change 900:/full/path/Other.cue --res
 bash tools/sim.sh --card CARD --disc CUE --mb128 --save-in in.sav --save-out out.sav   # the Memory Base 128 setting; the Save slot through its real path
 bash tools/mb128-test.sh                           # the repo's MB128 card against each kind of save, checked; five runs, about three minutes
 SIM_OUT=build/sim_b NO_BUILD=1 bash tools/sim.sh ... # on the build there is, into its own folder; several at once
+SIM_BUILD=$PWD/build/sim_x bash tools/sim.sh ...  # build somewhere other than build/sim, so a long run on it isn't touched
+SIM_VFLAGS=-DVDC_TRACE bash tools/sim.sh ...       # "vt" lines: each CR and RCR write, RCR interrupt and BB/SB latch, with the VDC's
+                                                   # line and dot; "vd" lines: line 120 of frame 100 dot by dot into the line buffer
 SIM_FW_PRINT=1 bash tools/sim.sh ...               # the firmware's mainprintf on stderr
 SIM_READ_EARLY=1 bash tools/sim.sh ...             # the fault of firmware before 5 Nov 2026: after a failed open, the next read is taken as finished at once
 SIM_SDRAM_STRICT=1 bash tools/sim.sh ...           # an SDRAM access inside tRC or tRFC fails, as the Pocket's chip sometimes does
@@ -94,7 +97,8 @@ python3 -I src/sim/console/compare.py build/sim_pce build/mame_pce --sheet /tmp/
 `compare.py` pairs each of the sim's frames with the MAME frame that shows the same, going forward
 in time, and counts the dots that differ at the console's own 9 bits of colour. Give it every MAME
 frame around what matters: with only every second one, a wipe or a moving sprite shows as a
-difference. At 5.37 MHz the sim's picture sits 9 dots right of MAME's left edge and 2 lines above its
+difference. At 5.37 MHz the sim's picture sits 8 dots right of MAME's left edge (9 before 9 Nov 2026, when
+the line buffer lost the first dot of every line) and 2 lines above its
 top, so the sim's top two lines aren't compared. `--arcade` in MAME takes Japan's 3.0 card, which its
 software list names by checksum; the `bios_3_0_jap.pce` used here is that card.
 

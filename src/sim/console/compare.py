@@ -8,7 +8,8 @@ it is. For each of the sim's f_NNNNN.png this looks through all of MAME's from w
 last match was, for the one that differs least, and prints it. Colours are compared as
 the console's own 9 bits: main.sv's palette.mif turns those into the sim's colours
 (build/sim/gen/palette.hex, read backwards here), and MAME's are the same 9 bits spread
-evenly. At 5.37 MHz the sim's picture sits 9 dots right of MAME's left edge and 2 lines
+evenly. At 5.37 MHz the sim's picture sits 8 dots right of MAME's left edge (9 before the line buffer
+fix of 9 Nov 2026, which lost the first dot of every line) and 2 lines
 above its top: the sim's top two lines aren't in MAME's picture, so aren't compared (the
 other clocks' offsets are found on their first frame with something in it, and kept).
 --sheet writes the pairs side by side.
@@ -162,7 +163,7 @@ def main():
         print(f'no frames in {ref_dir}: tools/mame-frames.sh first')
         sys.exit(2)
     back = palette(sim_dir.parent / 'sim' / 'gen' / 'palette.hex')
-    cache, offsets, pairs = {}, {4: (9, -2)}, []
+    cache, offsets, pairs = {}, {4: (8, -2)}, []
     last, bad = 0, 0
 
     def ref_dots(i, step):

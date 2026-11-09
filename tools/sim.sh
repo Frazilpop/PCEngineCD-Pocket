@@ -5,12 +5,12 @@
 #   bash tools/sim.sh --card CARD --disc CUE [--frames N] [--every K] [--save F,F] [--press F:buttons[:N]] [--arcade] [--change F:CUE] [--reset F] [--mb128] [--save-in F] [--save-out F]
 #   NO_BUILD=1 bash tools/sim.sh ...                     a run on the build there is
 #   SIM_OUT=DIR NO_BUILD=1 bash tools/sim.sh ...         somewhere else, for several at once
-# The build is kept in build/sim and made again only when a source changes.
+# The build is kept in build/sim (SIM_BUILD: another folder, to build while a run goes on) and made again only when a source changes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 R=$PWD/src/fpga/core/rtl
 S=$PWD/src/sim/console
-B=$PWD/build/sim
+B=${SIM_BUILD:-$PWD/build/sim}
 OUT=${SIM_OUT:-$PWD/build/sim_pce}
 mkdir -p "$B/gen" "$OUT"
 

@@ -97,13 +97,14 @@ begin
 		if rising_edge(CLK) then
 			hs := not HS_N;
 			clk_in_line := clk_in_line + 1;
-			-- linebuffer.v's writer
+			-- linebuffer.v's writer (2 and 3 since 9 Nov 2026: with 3 and 4 the line buffer lost the first
+			-- dot of every line, which this bench can't show, as it counts the VDC's colour and not the VCE's)
 			write_now := false;
 			if BORDER = '0' and prev_b = '1' then
-				enable_delay := 3;
+				enable_delay := 2;
 				border_off := clk_in_line;
 			elsif BORDER = '1' and prev_b = '0' then
-				border_delay := 4;
+				border_delay := 3;
 				border_on := clk_in_line;
 			elsif CE_FS = '1' then
 				if border_delay > 0 then border_delay := border_delay - 1; end if;

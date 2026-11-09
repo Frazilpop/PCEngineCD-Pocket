@@ -206,6 +206,50 @@ module sim_top (
 		pce.pce_top.chip.cd.cd_dtd_en, pce.pce_top.chip.cd.cd_dtd, pce.pce_top.chip.cd.cd_subcd_en, pce.pce_top.chip.cd.cd_subcd,
 		pce.pce_top.chip.cd.adpcm_end_en, pce.pce_top.chip.cd.adpcm_end, pce.pce_top.chip.cd.adpcm_half_en, pce.pce_top.chip.cd.adpcm_half,
 		pce.pce_top.chip.cd.scsi_req_n};
+`ifdef VDC_TRACE
+	// SIM_VFLAGS=-DVDC_TRACE: each change of the VDC's CR or RCR, its RCR interrupt and its
+	// per-line BB/SB latch, with where in the line and frame it fell (the window step, 9 Nov 2026)
+	logic [31:0] vt_clk = 0, vt_frame = 0, vt_irq_at = 0;
+	logic vt_vs = 0, vt_irq = 0, vt_bb = 0, vt_sb = 0;
+	logic [15:0] vt_cr = 0, vt_rcr = 0;
+	wire [15:0] vt_cr_now  = pce.pce_top.chip.vdc0.regs[(31-5)*16 +: 16];
+	wire [15:0] vt_rcr_now = pce.pce_top.chip.vdc0.regs[(31-6)*16 +: 16];
+	`define VT_WHERE vt_frame, vt_clk, pce.pce_top.chip.vdc0.disp_cnt, pce.pce_top.chip.vdc0.rc_cnt, \
+		pce.pce_top.chip.vdc0.tile_cnt, pce.pce_top.chip.vdc0.dot_cnt, pce.pce_top.chip.vdc0.hds_end_pos, pce.pce_top.chip.vdc0.hdisp_end_pos
+	always @(posedge clk_sys) begin
+		vt_clk <= vt_clk + 1;
+		vt_vs <= vs;
+		if (vs && !vt_vs) vt_frame <= vt_frame + 1;
+		vt_irq <= pce.pce_top.chip.vdc0.irq_rcr;
+		vt_bb <= pce.pce_top.chip.vdc0.bb; vt_sb <= pce.pce_top.chip.vdc0.sb;
+		vt_cr <= vt_cr_now; vt_rcr <= vt_rcr_now;
+		if (pce.pce_top.chip.vdc0.irq_rcr && !vt_irq) begin
+			vt_irq_at <= vt_clk;
+			$display("vt %0d %0d irq   disp %0d rc %03x tile %0d.%0d hds %0d hdisp %0d", `VT_WHERE);
+		end
+		if (vt_cr_now != vt_cr)
+			$display("vt %0d %0d cr %04x disp %0d rc %03x tile %0d.%0d hds %0d hdisp %0d  +%0d from irq", vt_frame, vt_clk, vt_cr_now,
+				pce.pce_top.chip.vdc0.disp_cnt, pce.pce_top.chip.vdc0.rc_cnt, pce.pce_top.chip.vdc0.tile_cnt, pce.pce_top.chip.vdc0.dot_cnt,
+				pce.pce_top.chip.vdc0.hds_end_pos, pce.pce_top.chip.vdc0.hdisp_end_pos, vt_clk - vt_irq_at);
+		if (vt_rcr_now != vt_rcr)
+			$display("vt %0d %0d rcr %03x disp %0d rc %03x tile %0d.%0d hds %0d hdisp %0d", vt_frame, vt_clk, vt_rcr_now[9:0],
+				pce.pce_top.chip.vdc0.disp_cnt, pce.pce_top.chip.vdc0.rc_cnt, pce.pce_top.chip.vdc0.tile_cnt, pce.pce_top.chip.vdc0.dot_cnt,
+				pce.pce_top.chip.vdc0.hds_end_pos, pce.pce_top.chip.vdc0.hdisp_end_pos);
+		if (pce.pce_top.chip.vdc0.bb != vt_bb || pce.pce_top.chip.vdc0.sb != vt_sb)
+			$display("vt %0d %0d latch bb %0d sb %0d disp %0d rc %03x tile %0d.%0d hds %0d hdisp %0d", vt_frame, vt_clk,
+				pce.pce_top.chip.vdc0.bb, pce.pce_top.chip.vdc0.sb, pce.pce_top.chip.vdc0.disp_cnt, pce.pce_top.chip.vdc0.rc_cnt,
+				pce.pce_top.chip.vdc0.tile_cnt, pce.pce_top.chip.vdc0.dot_cnt, pce.pce_top.chip.vdc0.hds_end_pos, pce.pce_top.chip.vdc0.hdisp_end_pos);
+	end
+	// and every dot of line 120 of frame 100 as it reaches the line buffer: the border flag, the
+	// colour and whether the line buffer takes it
+	logic [9:0] vt_line = 0; logic vt_hs = 0;
+	always @(posedge clk_sys) begin
+		vt_hs <= hs;
+		if (vs && !vt_vs) vt_line <= 0; else if (hs && !vt_hs) vt_line <= vt_line + 1;
+		if (vt_frame == 100 && vt_line == 120 && (ce_pix || linebuffer.bank_write))
+			$display("vd ce %0d border %0d rgb %02x%02x%02x write %0d", ce_pix, border, r, g, b, linebuffer.bank_write);
+	end
+`endif
 	assign chip_snd = {pce.psg_sl, pce.psg_sr, pce.cdda_sl, pce.cdda_sr, pce.adpcm_s};
 	assign mb128_state = pce.MB128.r_State;
 	assign mb128_req   = pce.MB128.r_Req;

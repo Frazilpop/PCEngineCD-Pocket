@@ -95,13 +95,18 @@ module linebuffer (
       output_line_width  <= bank_line_width > 0 ? bank_line_width : output_line_width;
     end
 
-    // Handle the weird timing of borders
+    // Handle the weird timing of borders.
+    // The VDC's border flag runs ahead of the VCE's colour, and a dot is taken the clock after
+    // ce_pix, when the VCE has already moved on to it. With MiSTer's VDC and VCE as of Jul 2026,
+    // 2 and 3 take every one of the VDC's HDW dots and one black after, at 5.37, 7.16 and
+    // 10.74 MHz; 3 and 4 took as many but lost the first dot of every line for a second black
+    // one (the RCR test ROM in the simulation, 9 Nov 2026). The line's width is the same either way.
     if (~disable_pix && prev_disable_pix) begin
       // Falling edge of border
-      enable_delay <= 3;
+      enable_delay <= 2;
     end else if (disable_pix && ~prev_disable_pix) begin
       // Rising edge of border
-      border_delay <= 4;
+      border_delay <= 3;
     end else if (ce_pix) begin
       if (border_delay > 0) begin
         border_delay <= border_delay - 1;
