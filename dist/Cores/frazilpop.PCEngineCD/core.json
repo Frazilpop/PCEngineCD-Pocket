@@ -4,7 +4,7 @@
     "metadata": {
       "platform_ids": ["pcecd"],
       "shortname": "PCEngineCD",
-      "description": "PC Engine (known as TurboGrafx-16 in the US) by NEC",
+      "description": "PC Engine CD for the Analogue Pocket",
       "author": "frazilpop",
       "url": "https://github.com/Frazilpop/PCEngineCD-Pocket",
       "version": "0.4.0",
