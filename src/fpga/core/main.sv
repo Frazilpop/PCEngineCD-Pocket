@@ -673,8 +673,10 @@ module pce (
   // A save state's load blanks the picture from the header's match to the let-go: the VDC
   // runs on while VRAM, the SAT and the palette fill, and would draw them half written. A
   // save blanks it from its ask to the let-go (state_engine.sv's blank).
+  // Skip the Run screen's black (below) is held the same way.
+  reg skip_run_black = 1;
   reg ss_blank_v = 0;
-  always @(posedge clk_mem_85_91) ss_blank_v <= ss_blank;
+  always @(posedge clk_mem_85_91) ss_blank_v <= ss_blank | (skip_run_enable & skip_run_black);
 
   assign {r1, g1, b1} = ss_blank_v ? 24'd0 :
                         raw_rgb_enable ? {{r, r, r[2:1]}, {g, g, g[2:1]}, {b, b, b[2:1]}} : pal_color;
@@ -849,11 +851,62 @@ end
       skip_run_armed <= 1;
       skip_run_count <= 0;
     end
-    else if (ss_link_we || (cd_comm_send && !cd_comm_send_old)) skip_run_armed <= 0;
+    else if (ss_link_we) skip_run_armed <= 0;
+    else if (skip_run_armed && cd_comm_send && !cd_comm_send_old) begin
+      skip_run_armed <= 0;
+      skip_run_count <= 0;                 // from the first command it times the black below
+    end
     else if (!ss_hold) skip_run_count <= skip_run_count + 1'd1;
   end
   // 2^24 clocks, 0.39 s or 23 frames a round; pressed in its last quarter, the first press 0.29 s in
   wire skip_run_press = skip_run_enable && skip_run_armed && &skip_run_count[23:22];
+
+  // and the title is never seen. The system card leaves it up, with JUST A MOMENT, until the
+  // game draws over it (R-Type: 2.5 s after Run), so the picture is black from the reset until
+  // the first frame that differs from the one before it, once the first READ(6) is 4 frames
+  // gone; for a disc with nothing to read (the CD player), a round after the first command.
+  // Whatever happens it ends 24 rounds (9.4 s) after the first command, or 8 rounds (3.1 s)
+  // from the reset if none comes, so a card that never leaves its title still shows it. A save
+  // state's chain going round lets it go, as it does the presses.
+  reg  [4:0] skip_run_rounds = 0;
+  reg        skip_run_sent = 0, skip_run_read = 0;
+  reg  [2:0] skip_run_frames = 0;
+  reg [23:0] skip_run_sig = 0, skip_run_last = 0;   // each frame's dots folded together
+  reg        skip_run_vs_old = 0;
+  wire       skip_run_round = &skip_run_count;
+  always @(posedge clk_sys_42_95) begin
+    if (ce_vid && !hbl && !vbl) skip_run_sig <= {skip_run_sig[22:0], skip_run_sig[23]} + {g, r, b};
+    skip_run_vs_old <= vs;
+    if (vs && !skip_run_vs_old) begin
+      skip_run_last <= skip_run_sig;
+      skip_run_sig <= 0;
+    end
+
+    if (reset) begin
+      skip_run_black <= 1;
+      skip_run_rounds <= 0;
+      skip_run_sent <= 0;
+      skip_run_read <= 0;
+      skip_run_frames <= 0;
+    end
+    else if (ss_link_we) skip_run_black <= 0;
+    else if (!ss_hold) begin
+      if (cd_comm_send && !cd_comm_send_old) begin
+        if (!skip_run_sent) skip_run_rounds <= 0;   // skip_run_count starts again with it
+        skip_run_sent <= 1;
+        if (cd_comm[7:0] == 8'h08) skip_run_read <= 1;
+      end
+      else if (skip_run_round) begin
+        skip_run_rounds <= skip_run_rounds + 1'd1;
+        if ((skip_run_sent && !skip_run_read) || (skip_run_sent && skip_run_rounds == 5'd23) ||
+            (!skip_run_sent && skip_run_rounds == 5'd7)) skip_run_black <= 0;
+      end
+      if (vs && !skip_run_vs_old && skip_run_read) begin
+        if (!skip_run_frames[2]) skip_run_frames <= skip_run_frames + 1'd1;
+        else if (skip_run_sig != skip_run_last) skip_run_black <= 0;
+      end
+    end
+  end
 
   wire [11:0] joy_0 = {
     p1_button_6,
