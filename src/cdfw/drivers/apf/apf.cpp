@@ -376,7 +376,9 @@ int GetFileNameDataSlot (dataslot_type *aft){
   return 0;
 }
 
-int OpenFileNameDataSlot (dataslot_type *aft, const char *s){
+// An open in two: the command started, and its end waited for. RISCFileSeekReady starts a
+// track's file before a tick and ends it on a later pass, so the drive can park between.
+int OpenFileNameDataSlotStart (dataslot_type *aft, const char *s){
     
     uint32_t temp = MAIN_SCRACH_ADDRESS_OFFSET;
 	  uint32_t * foo1 = &temp;
@@ -406,7 +408,10 @@ int OpenFileNameDataSlot (dataslot_type *aft, const char *s){
     riscusleep(10);
     strcpy(data, s);
     dataslot_pathname_file_decode(aft);
+    return 0;
+}
 
+int OpenFileNameDataSlotEnd (dataslot_type *aft){
     uint32_t error = dataslot_result();
     dataslot_open_error = error;
     if (error)
@@ -420,4 +425,8 @@ int OpenFileNameDataSlot (dataslot_type *aft, const char *s){
     aft->aft_op_flags     =  SCRACH_RAMBUFFER(260);
     mainprintf("Directory %s \r\n File name %s \r\n more information %0.8x %0.8x\r\n",aft->aft_filepath, aft->aft_filename, aft->aft_op_flags, aft->aft_op_filesize);
     return 0;
+}
+int OpenFileNameDataSlot (dataslot_type *aft, const char *s){
+    OpenFileNameDataSlotStart(aft, s);
+    return OpenFileNameDataSlotEnd(aft);
 }

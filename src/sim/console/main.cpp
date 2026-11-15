@@ -31,6 +31,9 @@
 //                         opens from N frames before a save or a load (its menu) until the
 //                         command is done, and a wake's reset is let go only after the load's
 //                         ok: the worst the Pocket may do, as on 6 Nov 2026 it seemed to
+//                         SIM_SAVE_US=T: --state-save's ask at T microseconds from power-on
+//                         instead of its frame's start; SIM_STOP_AT_POINT=1: the run ends at
+//                         the save's clean point or its refusal (tools/park-sweep.sh)
 // From the clock the console is let go, after.txt has each whole frame: its number
 // from the let-go, its picture's CRC and a CRC of the chips' own sound (the PSG's,
 // CD audio's and ADPCM's outputs before the filters) on every clock of it.
@@ -349,8 +352,20 @@ static void frame_done() {
 }
 
 static void ss_report(const char *what) {
-  printf("state: %s at clock %llu, frame %ld (status %d)\n", what, (unsigned long long)clocks, nframe, top->ss_status);
+  printf("state: %s at clock %llu, frame %ld (status %d, refused %d, seen %02X)\n", what, (unsigned long long)clocks, nframe, top->ss_status,
+         top->ss_refused >> 8, top->ss_refused & 0xFF);
   fflush(stdout);
+  // SIM_STOP_AT_POINT: a sweep only wants to know whether the save got its clean point
+  static bool stop = getenv("SIM_STOP_AT_POINT");
+  if (stop && (strstr(what, "frozen") || strstr(what, "an error"))) finish();
+}
+// SIM_SAVE_US: --state-save's ask at that time from power-on, in microseconds, rather than
+// at its frame's start, for a sweep across a moment shorter than a frame
+static long long save_us = -1;
+static bool save_due() {
+  if (st_save_at < 0 || !st_out.empty()) return false;
+  if (save_us >= 0) return clocks * 1000000ull / CLK_HZ >= (unsigned long long)save_us;
+  return nframe == st_save_at;
 }
 static void ss_let_go() {
   ss_report("let go");
@@ -375,7 +390,7 @@ static void ss_step() {
   if (top->ss_status == 3 && hs != H_DONE && hs != H_IDLE) { ss_report("an error"); hs = H_DONE; }
   switch (hs) {
   case H_IDLE:
-    if (st_save_at >= 0 && nframe == st_save_at && st_out.empty()) {
+    if (save_due()) {
       top->ss_save = 1; st_out = st_save; hs = H_SEEK; hwait = 4; t_cmd = clocks; ss_report("save asked");
     } else if (!st_loaded.empty() && nframe == st_load_at) {
       top->ss_load = 1; hs = H_LWRITE; hw = 0; hwait = 40; ss_report("load begun");
@@ -452,7 +467,7 @@ bool sim_pocket_hold() {
   // on a Pocket, and waits on the drive's reads: answered
   if (p_resaving) return false;
   if (ps != P_IDLE && ps != P_DONE) return true;
-  if (ps == P_IDLE && running && st_save_at >= 0 && st_out.empty() && nframe + p_hold >= st_save_at) return true;
+  if (ps == P_IDLE && running && st_save_at >= 0 && st_out.empty() && (save_us < 0 || p_hold > 0) && nframe + p_hold >= st_save_at) return true;
   if (ps == P_IDLE && running && !p_wake && !p_loaded && !st_loaded.empty() && nframe + p_hold >= st_load_at) return true;
   return false;
 }
@@ -481,7 +496,7 @@ static void pocket_74a() {
   pb->bridge_rd = 0; pb->bridge_wr = 0;
   switch (ps) {
   case P_IDLE:
-    if (running && st_save_at >= 0 && nframe == st_save_at && st_out.empty()) { p_start_save(st_save); ss_report("save asked"); }
+    if (running && save_due()) { p_start_save(st_save); ss_report("save asked"); }
     else if (running && !p_wake && !p_loaded && !st_loaded.empty() && nframe == st_load_at) {
       ss_report("load begun");
       p_loaded = true; pa = 0; pt = 0; pchunk_end = P_CHUNK; ps = P_WRITE;
@@ -725,6 +740,7 @@ int main(int argc, char **argv) {
   if (card_path.empty()) { fprintf(stderr, "--card FILE: a system card, or tools/testcard.py's\n"); return 2; }
   if (const char *v = getenv("SIM_SPI_SETUP")) spi_setup = atoi(v);
   if (const char *v = getenv("SIM_SPI_HOLD")) spi_hold = atoi(v);
+  if (const char *v = getenv("SIM_SAVE_US")) save_us = atoll(v);
 
   top = new Vsim_top;
   top->skip_run = skip_run;

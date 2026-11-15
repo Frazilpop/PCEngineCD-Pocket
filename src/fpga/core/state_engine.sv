@@ -74,6 +74,8 @@ module state_engine (
 	output wire        drv_load,
 	input  wire        drv_parked,
 	input  wire        drv_restored,
+	// what refused saves waited on: the count (saturating) and the last one's seen bits, below
+	output wire [11:0] refused,
 
 	// the chains
 	output reg   [3:0] chain = 0,
@@ -269,6 +271,16 @@ reg  [31:0] rec_frame = 0;
 reg  [15:0] rec_menu = 0;				// the menu at the save's ask (word 22)
 reg  [15:0] rec_q = 0, rec_qn = 0;		// the queries before it (words 24, 25)
 reg  [15:0] rec_cmd = 0, rec_cmdf = 0;	// the last other command and the frames since (26, 27)
+
+// What a save waited on, each seen at least once since its ask: bit 0 the drive parked, 1 the
+// window, 2 an opcode fetch inside it, 3 all three at once (the CPU paused, S_PARK), and with the
+// CPU parked there 4 ROM_RDY, 5 nothing busy (the VDC's and VCE's ports, a DMA), 6 the ADPCM
+// memory free, 7 the CPU parked at all. A refused save's, and the count of refusals, are kept for
+// the CD Debug overlay (CORE_INPUT) and the next Memory's header (word 28): the Pocket shows any
+// refusal as the same "saving failed", and the bit that never came up says which wait it was.
+reg   [7:0] seen = 0, refused_seen = 0;
+reg   [3:0] refusals = 0;
+assign refused = {refusals, refused_seen};
 reg  [31:0] ask_frame = 0;				// the frame of the save's ask
 reg   [5:0] cnt [0:NCHAIN-1];			// each chain's words moved since its start, mod its length
 reg  [12:0] fcnt [0:2];					// each FIFO's count, as the file has it
@@ -380,6 +392,7 @@ function [15:0] hdr_word(input [6:0] k);
 	7'd25: hdr_word = rec_qn;
 	7'd26: hdr_word = rec_cmd;
 	7'd27: hdr_word = rec_cmdf;
+	7'd28: hdr_word = {refusals, 4'd0, refused_seen};
 	default: hdr_word = 16'd0;
 	endcase
 endfunction
@@ -601,6 +614,7 @@ always @(posedge clk) begin
 				rec_cmd <= cmd_other;
 				rec_cmdf <= other_frames;
 				ask_frame <= frame;
+				seen <= 0;
 				drv_park <= 1;
 				tmr <= 0;
 				st <= S_SEEK;
@@ -622,17 +636,26 @@ always @(posedge clk) begin
 		S_SEEK:
 			// the drive parked first, at the top of its pass; then the CPU at its next opcode
 			// fetch inside the window
-			if (tmr >= 2 * CLK_HZ) begin SS_STATUS <= 3; drv_park <= 0; st <= S_IDLE; end
-			else if (window && cpu_sync && drv_parked) begin cpu_pause <= 1; st <= S_PARK; end
+			if (tmr >= 2 * CLK_HZ) begin
+				SS_STATUS <= 3; drv_park <= 0; st <= S_IDLE;
+				refused_seen <= seen;
+				if (~&refusals) refusals <= refusals + 1'd1;
+			end
+			else begin
+				seen[2:0] <= seen[2:0] | {window && cpu_sync, window, drv_parked};
+				if (window && cpu_sync && drv_parked) begin cpu_pause <= 1; seen[3] <= 1; st <= S_PARK; end
+			end
 
-		S_PARK:
+		S_PARK: begin
 			// the pause can come a clock after the fetch was taken, and the CPU then parks inside
 			// the instruction: let it go and try at the next fetch
+			if (cpu_parked) seen[7:4] <= seen[7:4] | {1'b1, freeze_ok, !busy, rom_rdy};
 			if (!window || (cpu_parked && !cpu_sync)) begin cpu_pause <= 0; st <= S_SEEK; end
 			else if (cpu_parked && rom_rdy && !busy && freeze_ok && drv_parked) begin
 				rec_v <= vpos; rec_h <= hpos; rec_fast <= cpu_fast; rec_frame <= frame;
 				st <= S_FREEZE;
 			end
+		end
 
 		S_FREEZE: begin
 			// the clock after R: the chips held from its edge, the VDC's snapshot taken at it

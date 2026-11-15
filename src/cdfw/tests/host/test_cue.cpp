@@ -105,6 +105,9 @@ void RISCSendZeros(uint8_t, uint8_t, uint8_t, uint32_t) {}
 void RISCFileCacheSize(uint32_t size) { cache_size = size; }
 void RISCFileCopy(uint8_t *dst, uint32_t len) { for (uint32_t i = 0; i < len; i++) dst[i] = (uint8_t)(last_seek + i); }
 bool dataslot_ready() { return true; }
+// the .sub read ahead of a tick (cue_t::SubcodeReady)
+uint32_t dataslot_read_lba_set(uint16_t, uint32_t, uint32_t) { return 0; }
+uint32_t dataslot_read_lba_fast(uint32_t, bool) { return 0; }
 void HPS_DisableIO() {}
 static int statuses;	// what SendStatus has sent
 static uint16_t last_status;	// the last of them, or for SendDataRequest its first word

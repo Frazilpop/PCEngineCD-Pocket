@@ -42,7 +42,6 @@ static const uint32_t CLOCKS_PER_MS = 42955;
 static const uint32_t CLOCKS_PER_US = 43;
 static uint32_t seek_us = 500, kb_us = 100, open_us = 2000;
 static std::string cue_path;
-static FILE *log_file;
 static bool fw_print;
 
 struct Slot { std::string path; FILE *f = nullptr; uint32_t size = 0; };
@@ -114,12 +113,31 @@ static void bridge_update()
 	}
 }
 
+static FILE *log_file;
+static uint64_t us_now() { return sim_clocks() * 1000000ull / 42954545; }	// as main.cpp's SIM_SAVE_US counts
+
+// The firmware waiting on the card, in drive.log: when, for how long, and whether a save
+// state asked the drive to park meanwhile (it can't: it parks only at the top of its loop)
+static void card_waited(const char *what, uint64_t from, bool asked)
+{
+	if (log_file) {
+		fprintf(log_file, "%ld %u card wait %s from %llu us for %llu us%s\n", sim_frame(), RISCGetTimer2(0), what,
+			(unsigned long long)from, (unsigned long long)(us_now() - from), asked ? ", a park asked" : "");
+		fflush(log_file);
+	}
+}
+
 static void bridge_wait()
 {
+	if (!bridge.busy) return;
+	uint64_t from = us_now();
+	bool asked = false;
 	while (bridge.busy) {
 		sim_tick(16);
 		bridge_update();
+		asked |= sim_drv_park();
 	}
+	card_waited("read", from, asked);
 }
 
 bool dataslot_ready()
@@ -195,13 +213,53 @@ int GetFileNameDataSlot(dataslot_type *a)
 int OpenFileNameDataSlot(dataslot_type *a, const char *s)
 {
 	bridge_wait();
-	while (sim_pocket_hold()) sim_tick(16);
+	if (sim_pocket_hold()) {
+		uint64_t from = us_now();
+		bool asked = false;
+		while (sim_pocket_hold()) { sim_tick(16); asked |= sim_drv_park(); }
+		card_waited("open held", from, asked);
+	}
 	split_path(a, s);
 	// as the bridge does, the name goes through the bottom of the scratch RAM
 	memset(fake_scratch, 0, 264);
-	sim_tick(open_us * CLOCKS_PER_US);
+	{
+		uint64_t from = us_now();
+		bool asked = false;
+		for (uint32_t t = 0; t < open_us * CLOCKS_PER_US; t += 16) { sim_tick(16); asked |= sim_drv_park(); }
+		card_waited("open", from, asked);
+	}
 	stale_error = false;
 	if (!open_slot(a->aft_dataslot, s)) {
+		stale_error = true;
+		file_error_enabled = 1;
+		file_error_code = 2;
+		return 1;
+	}
+	a->aft_op_filesize = slots[a->aft_dataslot].size;
+	return 0;
+}
+
+// The open in two (RISCFileSeekReady's): the command on the bridge as a read is, taking
+// SIM_CARD_OPEN_US, held as reads are; its end waits for it
+static int open_result;
+int OpenFileNameDataSlotStart(dataslot_type *a, const char *s)
+{
+	bridge_wait();
+	split_path(a, s);
+	memset(fake_scratch, 0, 264);	// the name through the bottom of the scratch RAM
+	stale_error = false;
+	open_result = open_slot(a->aft_dataslot, s) ? 0 : 1;
+	bridge.bytes.clear();
+	bridge.at = 0;
+	bridge.done = sim_clocks() + (uint64_t)open_us * CLOCKS_PER_US;
+	bridge.busy = true;
+	return 0;
+}
+
+int OpenFileNameDataSlotEnd(dataslot_type *a)
+{
+	bridge_wait();
+	if (open_result) {
 		stale_error = true;
 		file_error_enabled = 1;
 		file_error_code = 2;
@@ -259,7 +317,8 @@ void drive_clock_set(uint32_t hi, uint32_t lo) { clock_offset = sim_clocks() - (
 // the drive goes on at the same clock after a let-go in a saved run and a loaded one
 static uint8_t drive_block[2048];
 uint8_t *sim_drive_block = drive_block;
-bool core_park_asked() { return sim_drv_park(); }
+// SIM_NO_PARK: a drive that never parks, so a save is refused (state_engine.sv's seen bits)
+bool core_park_asked() { static bool never = getenv("SIM_NO_PARK"); return !never && sim_drv_park(); }
 bool core_state_in() { return sim_drv_state_in(); }
 // SIM_PARK_NO_LOAD: the firmware before 6 Nov 2026's load bit, which wrote its block at every park
 bool core_park_load() { static bool old = getenv("SIM_PARK_NO_LOAD"); return sim_drv_load() && !old; }

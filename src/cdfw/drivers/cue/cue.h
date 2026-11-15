@@ -160,6 +160,8 @@ public:
 	void OpenTray();
 	void CloseTray();
 	void Update();
+	bool NextSeek(const char **name, uint32_t *pos, uint32_t *size);	// the next Update's first read of a track, if it makes one
+	bool SubcodeReady();	// the next Update's subcode from the .sub in the cache, or its read started
 	void CommandExec();
 	uint16_t GetStatus();
 	int SetCommand(uint8_t* buf);
@@ -206,6 +208,8 @@ private:
 	void ForgetSubcode();
 	void OpenSubcode(const char *cue_name);
 	bool SubcodeFromFile(int lba, uint8_t *subc);
+	bool SubcodeMissing(int lba);
+	void SubcodeFill(int lba);
 	void ReadSubcode();
 	void SendSubcode();
 	int SectorSend(uint8_t* header);

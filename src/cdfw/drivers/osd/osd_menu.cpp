@@ -53,7 +53,11 @@ void osd_display_info(){
     OsdWrite(s);
     OsdUpdate(1);
     OsdClear();
-    sprintf (s, "T M:S : %d %d %d", nstore1,  nstore2 , nstore3);
+    // R: saves the engine refused, and what the last one waited on (state_engine.sv's seen
+    // bits: 01 the drive parked, 02 the window, 04 a fetch in it, 08 all three, 80 the CPU
+    // parked there, with 10 ROM_RDY, 20 nothing busy, 40 the ADPCM memory free)
+    uint32_t in = CORE_INPUT_REGISTOR();
+    sprintf (s, "T M:S : %d %d %d R%d:%02X", nstore1,  nstore2 , nstore3, (int)((in >> 15) & 15), (int)((in >> 7) & 0xFF));
     OsdWrite(s);
     OsdUpdate(0);
     OsdClear();

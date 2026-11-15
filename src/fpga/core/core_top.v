@@ -1043,7 +1043,12 @@ MPU_AFP_CORE #(
   wire ss_drv_park, ss_drv_in, ss_drv_load, ss_drv_park_s, ss_drv_in_s, ss_drv_load_s, ss_drv_parked_s, ss_drv_restored_s;
   synch_3 #(.WIDTH(3)) ss_drv_in_sync ({ss_drv_load, ss_drv_in, ss_drv_park}, {ss_drv_load_s, ss_drv_in_s, ss_drv_park_s}, clk_74a);
   synch_3 #(.WIDTH(2)) ss_drv_out_sync (CORE_OUTPUT[4:3], {ss_drv_restored_s, ss_drv_parked_s}, clk_sys_42_95);
-  assign CORE_INPUT = {25'd0, ss_drv_load_s, ss_drv_in_s, ss_drv_park_s, psram_status_s};
+  // [18:7] the engine's refused saves: the count, and what the last one waited on (state_engine.sv's
+  // seen bits), for the CD Debug overlay. They change only at a refusal, so a read torn across the
+  // clocks is wrong for one look at most.
+  wire [11:0] ss_refused, ss_refused_s;
+  synch_3 #(.WIDTH(12)) ss_refused_sync (ss_refused, ss_refused_s, clk_74a);
+  assign CORE_INPUT = {13'd0, ss_refused_s, ss_drv_load_s, ss_drv_in_s, ss_drv_park_s, psram_status_s};
 
   wire [15:0] audio_l;
   wire [15:0] audio_r;
@@ -1218,6 +1223,7 @@ MPU_AFP_CORE #(
 		.SS_DRV_PARK				(ss_drv_park),
 		.SS_DRV_IN					(ss_drv_in),
 		.SS_DRV_LOAD				(ss_drv_load),
+		.SS_REFUSED					(ss_refused),
 		.SS_MB128_ON				(ss_set_mb128),
 		.SS_AC_ON					(ss_set_ac),
 		.SS_DRV_PARKED				(ss_drv_parked_s),

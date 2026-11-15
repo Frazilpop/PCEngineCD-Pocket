@@ -76,6 +76,7 @@ module sim_top (
 	output logic [31:0] ss_card_size,
 	output logic [31:0] ss_card_sum,
 	output logic [20:0] ss_words,
+	output logic [11:0] ss_refused,		// state_engine.sv's refused saves and the last one's seen bits
 	// the chips' own sound, before the filters: {psg_sl, psg_sr, cdda_sl, cdda_sr, adpcm_s}
 	output logic [79:0] chip_snd,
 	// for SIM_SSDBG: the VDC's registers
@@ -197,7 +198,7 @@ module sim_top (
 		.SS_SAVE(ss_save), .SS_LOAD(ss_load), .SS_MENU(1'b0), .SS_CMD_NEW(1'b0), .SS_CMD(17'd0), .SS_GO(ss_go), .SS_STATUS(ss_status),
 		.SS_ADDR(ss_addr), .SS_RD(ss_rd), .SS_DO(ss_do), .SS_WR(ss_wr), .SS_DI(ss_di),
 		.SS_CARD_SIZE(ss_card_size), .SS_CARD_SUM(ss_card_sum), .SS_WORDS(ss_words),
-		.SS_DRV_PARK(drv_park), .SS_DRV_IN(drv_in), .SS_DRV_LOAD(drv_load), .SS_MB128_ON(ss_mb128_on), .SS_AC_ON(ss_ac_on), .SS_DRV_PARKED(drv_parked), .SS_DRV_RESTORED(drv_restored)
+		.SS_DRV_PARK(drv_park), .SS_DRV_IN(drv_in), .SS_DRV_LOAD(drv_load), .SS_REFUSED(ss_refused), .SS_MB128_ON(ss_mb128_on), .SS_AC_ON(ss_ac_on), .SS_DRV_PARKED(drv_parked), .SS_DRV_RESTORED(drv_restored)
 	);
 
 	assign dbg_vdc_regs = pce.pce_top.chip.vdc0.regs;

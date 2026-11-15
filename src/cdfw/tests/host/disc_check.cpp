@@ -71,6 +71,9 @@ uint32_t dataslot_read(uint16_t slot, uint32_t address, uint32_t offset, uint32_
 void clearscrachram(uint32_t offset, uint32_t size) { memset(fake_scratch + offset, 0, size); }
 uint32_t dataslot_open_error;
 bool dataslot_ready() { return true; }
+// the .sub read ahead of a tick (cue_t::SubcodeReady)
+uint32_t dataslot_read_lba_set(uint16_t, uint32_t, uint32_t) { return 0; }
+uint32_t dataslot_read_lba_fast(uint32_t, bool) { return 0; }
 void RISCFileCacheSize(uint32_t) {}
 void RISCFileCopy(uint8_t *, uint32_t) {}
 uint32_t RISCFileSeek(const char *, uint32_t, uint32_t, uint32_t, dataslot_type *) { return 1; }

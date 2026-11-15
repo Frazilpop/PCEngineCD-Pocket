@@ -57,6 +57,9 @@ int OpenFileNameDataSlot(dataslot_type *a, const char *s)
 	open_name = name;
 	return 0;
 }
+// RISCFileSeekReady's open in two; the fake bridge has it done at once
+int OpenFileNameDataSlotStart(dataslot_type *a, const char *s) { return OpenFileNameDataSlot(a, s); }
+int OpenFileNameDataSlotEnd(dataslot_type *) { return 0; }
 void osd_display_info_update(int) {}
 int mainprintf(const char *, ...) { return 0; }
 void HPS_EnableIO() { }
@@ -120,6 +123,38 @@ static void play(uint32_t cache, uint32_t sector, uint32_t send, uint32_t first,
 }
 
 // The same with a CDG track's subcode copied out after each sector's audio.
+// As a tick goes now (pcecd.cpp): RISCFileSeekReady before the seek, until it says the seek
+// can be made, then the read ahead, then the seek, which must find it all in and read nothing
+// itself but a read ahead. Sectors from each run's start in turn, across files and jumps.
+static void play_ready(uint32_t cache, uint32_t sector, const char *const *names, const uint32_t *firsts, int runs, uint32_t count)
+{
+	RISCFileCacheSize(cache);
+	start(names[0]);
+	strcpy(a.aft_filename, "");		// nothing open yet, as at a disc's first read
+	for (int r = 0; r < runs; r++) {
+		const std::string &f = files[names[r]];
+		for (uint32_t s = firsts[r]; s < firsts[r] + count; s++) {
+			int tries = 0;
+			while (!RISCFileSeekReady(names[r], s * sector, sector, &a)) tries++;
+			CHECK(tries <= 2);				// an open, then a full load, at most
+			RISCFileAheadStart();
+			int full = full_reads;
+			std::string opened = open_name;
+			tx.clear();
+			RISCFileSeek(names[r], s * sector, sector, 0, &a);
+			RISCFileReadAdv(101, 0, 0, 0, sector);
+			CHECK(full_reads == full);		// no full load left in the seek
+			CHECK(open_name == opened);		// nor an open
+			CHECK(tx.size() == sector && !memcmp(tx.data(), f.data() + s * sector, sector));
+			if (failures) {
+				fprintf(stderr, "  cache %u sector %u: run %d at sector %u\n", cache, sector, r, s);
+				return;
+			}
+		}
+	}
+	CHECK(!bad);
+}
+
 static void play_cdg(uint32_t cache, uint32_t first, uint32_t count)
 {
 	const std::string &f = files["a.bin"];
@@ -169,6 +204,16 @@ int main()
 		RISCFileReadAdv(101, 0, 0, 0, 2352);
 		CHECK(!memcmp(tx.data(), files["b.bin"].data() + 2352 * 5, 2352));
 		CHECK(open_name == "b.bin");
+	}
+
+	// the tick's reads started before it: the same data, and no wait left inside the seek
+	{
+		static const char *const names[] = { "a.bin", "a.bin", "b.bin", "a.bin", "b.bin" };
+		static const uint32_t firsts[] = { 0, 900, 5, 333, 200 };
+		for (uint32_t cache : { (uint32_t)SECTOR_CACHE_SIZE, (uint32_t)SECTOR_CACHE_SIZE_SUB }) {
+			play_ready(cache, 2352, names, firsts, 5, 40);
+			play_ready(cache, 2048, names, firsts, 5, 40);
+		}
 	}
 
 	// a smaller buffer costs a few more reads and no more data

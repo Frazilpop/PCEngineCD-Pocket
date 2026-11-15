@@ -41,6 +41,16 @@ on before the firmware has run, then the firmware's start with the console's res
 runs and compares them (its header says how; `--refuse VAR` for a refused load), with the SDRAM's
 timing strict (below).
 
+`SIM_POCKET_HOLD=N` has the Pocket answer none of the drive's card reads or opens from N frames
+before a save or a load until the command is done (0: from the ask). `SIM_SAVE_US=T` asks
+`--state-save`'s save at T microseconds from power-on rather than at its frame's start, and
+`SIM_STOP_AT_POINT=1` ends the run as soon as the save has its clean point or is refused. Each
+state line gives the engine's refused saves and what the last one waited on (`state_engine.sv`'s
+seen bits); `SIM_NO_PARK=1` is a drive that never parks, so every save is refused.
+`tools/park-sweep.sh` puts these together: saves asked across a moment, the card held from each
+ask, counting the refused. drive.log's `card wait` lines say when the firmware waited on the card
+and whether a park was asked meanwhile.
+
 A Memory off the Pocket's card loads too: cut off the Pocket's 0x254-byte header and the 52,764-byte
 picture, give the run the card's disc and system card, and `SIM_CARD_ROOT=/Volumes/<card>` so the
 drive's block, which names the card's files from `/Assets` on, opens them there. `SIM_PCTRACE=1`
@@ -74,7 +84,7 @@ Out, in `build/sim_pce/` or `SIM_OUT` (the core's page shows `build/sim_pce` in 
 | `frames.txt` | every frame: its number, size, a CRC of its pixels and its top-left pixel, for comparing two runs |
 | `audio.wav` | `main.sv`'s `audio_l`, `audio_r`, 16-bit stereo at 48 kHz |
 | `sources.wav` | the chips' own sound before `audio.sv`'s filters and mix, five channels at 48 kHz: the PSG's left and right, CD audio's left and right, ADPCM; each the mean over its sample, so the PSG's 3.58 MHz doesn't fold down |
-| `drive.log` | each command to the drive and each stage of its load, with the frame and the firmware's millisecond; another disc chosen, the tray opening and shutting, the console told, Reset core; each MB128 ident, read and write a game asks for |
+| `drive.log` | each command to the drive and each stage of its load, with the frame and the firmware's millisecond; each wait of the firmware's on the card (`card wait`, from when in microseconds, how long, and whether a park was asked meanwhile); another disc chosen, the tray opening and shutting, the console told, Reset core; each MB128 ident, read and write a game asks for |
 | `run.json` | the card and disc, the frames, the time, the speed, the drive's counters, the PSRAM's self-test and its timing faults (both chips), and the ADPCM memory's reads and writes, so a run that never touched it shows |
 
 **The test card** (`tools/testcard.py`, into `build/sim/test`) is the repo's own, so it can be committed: HuC6280 code

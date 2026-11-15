@@ -175,6 +175,7 @@ module pce (
     output wire        SS_DRV_PARK,
     output wire        SS_DRV_IN,
     output wire        SS_DRV_LOAD,
+    output wire [11:0] SS_REFUSED,			// state_engine.sv's refused saves, for the CD Debug overlay
     // the MB128 and Arcade System settings as the Pocket wrote them: what a state holds and is checked against
     input  wire        SS_MB128_ON,
     input  wire        SS_AC_ON,
@@ -444,6 +445,7 @@ module pce (
       .drv_load(SS_DRV_LOAD),
       .drv_parked(SS_DRV_PARKED),
       .drv_restored(SS_DRV_RESTORED),
+      .refused(SS_REFUSED),
 
       .chain(ss_chain),
       .shift(ss_shift),

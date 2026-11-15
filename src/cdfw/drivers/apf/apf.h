@@ -92,5 +92,7 @@ uint8_t     dataslot_status();
 void        dataslot_pathname_file_decode (dataslot_type *aft);
 int         GetFileNameDataSlot (dataslot_type *aft);
 int         OpenFileNameDataSlot (dataslot_type *aft, const char *s);
+int         OpenFileNameDataSlotStart (dataslot_type *aft, const char *s);
+int         OpenFileNameDataSlotEnd (dataslot_type *aft);
 
 #endif

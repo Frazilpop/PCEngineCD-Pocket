@@ -693,6 +693,67 @@ void cue_t::Update() {
 	osd_display_timing(this->index + 1,  msf.m , msf.s);
 }
 
+// The first read from a track's file the next Update will make, if it makes one, followed
+// down Update's own path without changing anything; and the .sub's sectors it will want.
+// Neither is in MiSTer's drive, whose card answers at once. pcecd.cpp asks before a tick, so
+// a read that would wait on the card is started from the top of its loop, where the drive
+// parks for a save state, and the tick put off until it has landed. Update is unchanged: if
+// these miss a read it makes, it waits for that read itself, as it always has.
+bool cue_t::NextSeek(const char **name, uint32_t *pos, uint32_t *size)
+{
+	if (this->state == CD_STATE_READ)
+	{
+		if ((this->latency > 0) || (this->index >= this->toc.last) || !this->can_read_next) return false;
+		cd_track_t *track = &this->toc.tracks[this->index];
+		if ((track->type != 1) || (this->lba < 0) || (this->lba < track->first)) return false;
+		*name = track->name;
+		*pos = FilePos(this->index, this->lba) + ((track->sector_size == 2048) ? 0 : 16);
+		*size = track->sector_size;
+		return true;
+	}
+	if (this->state == CD_STATE_PLAY)
+	{
+		if ((this->latency > 0) || (this->audiodelay > 0)) return false;
+		int i = GetTrackByLBA(this->lba, &this->toc);
+		cd_track_t *track = &this->toc.tracks[i];
+		for (int k = 0; k <= this->CDDAFirst; k++)
+		{
+			if ((track->type == 0) && (this->lba + k >= track->first))
+			{
+				*name = track->name;
+				*pos = FilePos(i, this->lba + k);
+				*size = track->sector_size;
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool cue_t::SubcodeReady()
+{
+	if (!sub_size || (this->latency != 0)) return true;
+	int n;
+	if (this->state == CD_STATE_PLAY) {
+		// Update's loop sends subcode with each sector of an audio track
+		int i = GetTrackByLBA(this->lba, &this->toc);
+		n = ((this->audiodelay > 0) || (this->toc.tracks[i].type != 0)) ? 0 : this->CDDAFirst + 1;
+	}
+	else n = (this->state == CD_STATE_PAUSE) ? 1 : 0;
+	for (int k = 0; k < n; k++)
+	{
+		int lba = this->lba + k;
+		if ((lba == sub_last_lba) || (lba < 0) || ((lba + 1) * 96 > sub_size) || !SubcodeMissing(lba)) continue;
+		// SubcodeFromFile's read, started and not waited for: the tick finds it in the cache.
+		// An error isn't seen here; the graphics of those sectors are wrong, and nothing else.
+		SubcodeFill(lba);
+		dataslot_read_lba_set(SUB_SLOT, APF_SCRACH_ADDRESS_OFFSET + SUB_CACHE_AT, lba * 96);
+		dataslot_read_lba_fast(sub_count * 96, 0);
+		return false;
+	}
+	return true;
+}
+
 void cue_t::CommandExec() {
 	msf_t msf;
 	int new_lba = 0;
@@ -1073,14 +1134,11 @@ bool cue_t::SubcodeFromFile(int lba, uint8_t *subc)
 {
 	if ((lba < 0) || ((lba + 1) * 96 > sub_size)) return false;
 
-	if ((lba < sub_first) || (lba >= sub_first + sub_count))
+	if (SubcodeMissing(lba))
 	{
 		bool error_enabled = file_error_enabled;
 		int error_code = file_error_code;
-		int left = (sub_size - lba * 96) / 96;
-
-		sub_count = (left < SUB_CACHE_SECTORS) ? left : SUB_CACHE_SECTORS;
-		sub_first = lba;
+		SubcodeFill(lba);
 		while (!dataslot_ready());	// the audio's read ahead may still be going
 		uint32_t error = dataslot_read(SUB_SLOT, APF_SCRACH_ADDRESS_OFFSET + SUB_CACHE_AT, lba * 96, sub_count * 96);
 		// a bad read of the graphics is no reason to put a box over the game
@@ -1093,6 +1151,19 @@ bool cue_t::SubcodeFromFile(int lba, uint8_t *subc)
 	}
 	memcpy(subc, (const uint8_t *)(MAIN_SCRACH_ADDRESS_OFFSET + SUB_CACHE_AT + (lba - sub_first) * 96), 96);
 	return true;
+}
+
+// A sector the .sub's cache hasn't got, and the cache set to read from it
+bool cue_t::SubcodeMissing(int lba)
+{
+	return (lba < sub_first) || (lba >= sub_first + sub_count);
+}
+
+void cue_t::SubcodeFill(int lba)
+{
+	int left = (sub_size - lba * 96) / 96;
+	sub_count = (left < SUB_CACHE_SECTORS) ? left : SUB_CACHE_SECTORS;
+	sub_first = lba;
 }
 
 // Fills sub_tx for where the head is, as MiSTer's ReadSubcode does, with the one

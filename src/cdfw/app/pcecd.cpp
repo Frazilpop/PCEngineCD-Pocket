@@ -225,6 +225,25 @@ static void park()
 	core_set_parked(false, false);
 }
 
+// The reads from the card the tick is about to wait on, started here and not waited for:
+// a track's file opened, a full load's first buffer, the .sub's next sectors. Each is the
+// read the tick would have made, in its order, and the tick is put off until they have
+// landed, so the loop's top, where the drive parks, comes between. The tick then finds them
+// all in the cache and goes on as it always has. A Memory asked as a boss's music starts (a
+// track's file opened, its first buffer read) was refused for this on the Pocket, as the
+// tick waited inside on a card the Pocket wasn't answering (docs/PLAN.md, A Memory refused
+// once in Dracula X). A full load's read ahead is started last, just before the tick, as
+// RISCFileSeek starts it.
+static bool tick_reads_ready()
+{
+	const char *name;
+	uint32_t pos, size;
+	if (cue.NextSeek(&name, &pos, &size) && !RISCFileSeekReady(name, pos, size, &aft)) return false;
+	if (!cue.SubcodeReady()) return false;
+	RISCFileAheadStart();
+	return true;
+}
+
 void pcecd_poll()
 {
 	if (core_park_asked()) park();
@@ -256,7 +275,7 @@ void pcecd_poll()
 	// here. On the Pocket the card may not be answered while a Memory is made, and maybe
 	// while the menu is up: a tick waiting inside then never let the drive park.
 	// mainprintf("milli seconds %0.8x \r\n", poll_timer);
-	if (RISCCheckTimer2(poll_timer) && dataslot_ready())
+	if (RISCCheckTimer2(poll_timer) && dataslot_ready() && tick_reads_ready())
 	{
 		// mainprintf("milli seconds done %0.8x \r\n", poll_timer);
 	    // ResetTimer2();
