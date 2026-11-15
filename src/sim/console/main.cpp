@@ -5,7 +5,7 @@
 //
 //   Vsim_top --card FILE [--disc CUE] [--out DIR] [--frames N] [--every K] [--save 100,200]
 //            [--press F:buttons[:N] ...] [--arcade] [--change F:CUE ...] [--reset F ...]
-//            [--mb128] [--save-in FILE] [--save-out FILE] [--press-file FILE]
+//            [--mb128] [--save-in FILE] [--save-out FILE] [--press-file FILE] [--skip-run]
 //            [--state-save F FILE] [--state-load FILE [--load-at F] [--resave FILE]]
 //
 // Save states (docs/SAVESTATES.md, The proofs), through main.sv's window to
@@ -78,6 +78,7 @@ static long press_file_at;
 static std::string save_in, save_out;		// the Save slot: loaded before the card, written at the end
 static uint32_t save_loaded;
 static bool mb128_on;
+static bool skip_run;				// the Skip the Run screen setting
 static bool set_ac, set_mb128;		// the Arcade System and MB128 settings, as CORE_OUTPUT has them once the firmware runs
 static int mb128_state;
 
@@ -699,6 +700,7 @@ int main(int argc, char **argv) {
     else if (a == "--save") saves = "," + next() + ",";
     else if (a == "--arcade") arcade = true;
     else if (a == "--mb128") mb128_on = true;
+    else if (a == "--skip-run") skip_run = true;
     else if (a == "--press-file") press_file = next();
     else if (a == "--save-in") save_in = next();
     else if (a == "--save-out") save_out = next();
@@ -725,6 +727,7 @@ int main(int argc, char **argv) {
   if (const char *v = getenv("SIM_SPI_HOLD")) spi_hold = atoi(v);
 
   top = new Vsim_top;
+  top->skip_run = skip_run;
   if (pb) {
     if (const char *v = getenv("SIM_POCKET_PERIOD")) P_PERIOD = atoi(v);
     if (const char *v = getenv("SIM_POCKET_CHUNK")) P_CHUNK = atoi(v);

@@ -72,6 +72,7 @@ module pce (
     input wire raw_rgb_enable,
 
     input wire mb128_enable,
+    input wire skip_run_enable,
 
     input wire cd_audio_boost,
     input wire adpcm_audio_boost,
@@ -833,12 +834,31 @@ end
                               button2_turbo_speed == 2 ? turbo_counter[1] :
                               1;
 
+  // Skip the Run screen (Core Settings): from a start or Reset core, Run on the first pad is
+  // pressed for 6 frames in every 23, until the system card's first command to the drive. The
+  // card sends none before Run (only its reset of the drive), and TEST UNIT READY the moment Run
+  // is taken, so the presses end on the title and never reach a game. Pressing again and again
+  // needs no timing for each card's title. A save state's chain going round stops it, so a
+  // loaded state never gets a press, and neither register needs a place in the state.
+  reg        skip_run_armed = 1;
+  reg [23:0] skip_run_count = 0;
+  always @(posedge clk_sys_42_95) begin
+    if (reset) begin
+      skip_run_armed <= 1;
+      skip_run_count <= 0;
+    end
+    else if (ss_link_we || (cd_comm_send && !cd_comm_send_old)) skip_run_armed <= 0;
+    else if (!ss_hold) skip_run_count <= skip_run_count + 1'd1;
+  end
+  // 2^24 clocks, 0.39 s or 23 frames a round; pressed in its last quarter, the first press 0.29 s in
+  wire skip_run_press = skip_run_enable && skip_run_armed && &skip_run_count[23:22];
+
   wire [11:0] joy_0 = {
     p1_button_6,
     p1_button_5,
     p1_button_4,
     p1_button_3,
-    p1_button_start,
+    p1_button_start | skip_run_press,
     p1_button_select,
     button6_enable ? p1_button_2 : p1_button_2 | (button2_turbo_enable && p1_button_4),
     button6_enable ? p1_button_1 : p1_button_1 | (button1_turbo_enable && p1_button_3),

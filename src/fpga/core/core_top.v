@@ -424,6 +424,9 @@ parameter CMD_REG_ADDRESS 			= 8'hf8;
         16'h010C: begin
           button2_turbo_speed <= bridge_wr_data[1:0];
         end
+        16'h0110: begin
+          skip_run_enable <= bridge_wr_data[0];
+        end
         16'h0200: begin
           overscan_enable <= bridge_wr_data[0];
         end
@@ -882,6 +885,7 @@ MPU_AFP_CORE #(
   reg button6_enable = 0;
   reg [1:0] button1_turbo_speed = 0;
   reg [1:0] button2_turbo_speed = 0;
+  reg skip_run_enable = 0;
 
   reg overscan_enable = 0;
   reg extra_sprites_enable = 0;
@@ -900,6 +904,7 @@ MPU_AFP_CORE #(
   wire button6_enable_s;
   wire [1:0] button1_turbo_speed_s;
   wire [1:0] button2_turbo_speed_s;
+  wire skip_run_enable_s;
 
   wire overscan_enable_s;
   wire extra_sprites_enable_s;
@@ -911,13 +916,14 @@ MPU_AFP_CORE #(
   wire [1:0] master_audio_boost_s;
 
   synch_3 #(
-      .WIDTH(14)
+      .WIDTH(15)
   ) settings_s (
       {
         turbo_tap_enable,
         button6_enable,
         button1_turbo_speed,
         button2_turbo_speed,
+        skip_run_enable,
         overscan_enable,
         extra_sprites_enable,
         raw_rgb_enable,
@@ -931,6 +937,7 @@ MPU_AFP_CORE #(
         button6_enable_s,
         button1_turbo_speed_s,
         button2_turbo_speed_s,
+        skip_run_enable_s,
         overscan_enable_s,
         extra_sprites_enable_s,
         raw_rgb_enable_s,
@@ -1117,6 +1124,7 @@ MPU_AFP_CORE #(
       .raw_rgb_enable(raw_rgb_enable_s),
 
       .mb128_enable(mb128_enable_s),
+      .skip_run_enable(skip_run_enable_s),
 
       .cd_audio_boost(cd_audio_boost_s),
       .adpcm_audio_boost(adpcm_audio_boost_s),

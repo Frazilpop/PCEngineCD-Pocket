@@ -13,6 +13,7 @@ bash tools/sim.sh --card CARD --disc CUE --press 300:run --press 400:i:8 --save 
 bash tools/sim.sh --card CARD --disc CUE --arcade  # the Arcade System core setting: the card's RAM (AC_EN)
 bash tools/sim.sh --card CARD --disc CUE --change 900:/full/path/Other.cue --reset 1000   # another disc chosen in Core Settings, Reset core
 bash tools/sim.sh --card CARD --disc CUE --mb128 --save-in in.sav --save-out out.sav   # the Memory Base 128 setting; the Save slot through its real path
+bash tools/sim.sh --card CARD --disc CUE --skip-run   # the Skip the Run screen setting: no --press needed to get past the title
 bash tools/mb128-test.sh                           # the repo's MB128 card against each kind of save, checked; five runs, about three minutes
 SIM_OUT=build/sim_b NO_BUILD=1 bash tools/sim.sh ... # on the build there is, into its own folder; several at once
 SIM_BUILD=$PWD/build/sim_x bash tools/sim.sh ...  # build somewhere other than build/sim, so a long run on it isn't touched

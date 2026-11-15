@@ -1,6 +1,6 @@
 // main.sv's pce, as core_top.v joins it, for Verilator: the real module and the real
 // line buffer, with the bus to the MPU and the pads brought out for main.cpp. Core
-// Settings at core_top.v's reset values (all off).
+// Settings at core_top.v's reset values (all off) but those main.cpp sets.
 
 module sim_top (
 	input  logic clk_sys,
@@ -13,6 +13,7 @@ module sim_top (
 
 	input  logic ac_en,
 	input  logic mb128_en,
+	input  logic skip_run,
 
 	// the save slot, as core_top.v's data_loader and data_unloader give it to main.sv
 	input  logic save_download,
@@ -148,6 +149,7 @@ module sim_top (
 		.extra_sprites_enable(1'b0),
 		.raw_rgb_enable(1'b0),
 		.mb128_enable(mb128_en),
+		.skip_run_enable(skip_run),
 		.cd_audio_boost(1'b0),
 		.adpcm_audio_boost(1'b0),
 		.master_audio_boost(2'b00),

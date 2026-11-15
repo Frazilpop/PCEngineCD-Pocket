@@ -11,6 +11,17 @@
         "value": 1
       },
       {
+        "name": "Skip the Run screen",
+        "id": 78,
+        "type": "check",
+        "enabled": true,
+        "address": "0x00000110",
+        "persist": true,
+        "writeonly": true,
+        "defaultval": 0,
+        "value": 1
+      },
+      {
         "name": "Use Turbo Tap",
         "id": 62,
         "type": "check",
