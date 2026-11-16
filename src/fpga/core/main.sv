@@ -862,23 +862,37 @@ end
   wire skip_run_press = skip_run_enable && skip_run_armed && &skip_run_count[23:22];
 
   // and the title is never seen. The system card leaves it up, with JUST A MOMENT, until the
-  // game draws over it (R-Type: 2.5 s after Run), so the picture is black from the reset until
-  // the first frame that differs from the one before it, once the first READ(6) is 4 frames
-  // gone; for a disc with nothing to read (the CD player), a round after the first command.
-  // Whatever happens it ends 24 rounds (9.4 s) after the first command, or 8 rounds (3.1 s)
-  // from the reset if none comes, so a card that never leaves its title still shows it. A save
+  // game draws over it (R-Type: 2.5 s after Run), and on a first start the drive may still be
+  // opening the disc when Run is taken, so no command marks the moment. The picture is black
+  // from the reset until, after the first command, a frame in which more than 32 lines differ
+  // from the frame before: JUST A MOMENT in place of PUSH RUN BUTTON is one row of text, 8
+  // lines, while a game's first picture, its clear to black or the CD player is far more. Each
+  // line's dots are folded into 16 bits and kept for the next frame in one RAM block. Whatever
+  // happens it ends 31 rounds (12.1 s) after the first command, or 8 rounds (3.1 s) with the
+  // setting on if none comes, so a card that never leaves its title still shows it. A save
   // state's chain going round lets it go, as it does the presses.
   reg  [4:0] skip_run_rounds = 0;
-  reg        skip_run_sent = 0, skip_run_read = 0;
-  reg  [2:0] skip_run_frames = 0;
-  reg [23:0] skip_run_sig = 0, skip_run_last = 0;   // each frame's dots folded together
-  reg        skip_run_vs_old = 0;
+  reg        skip_run_sent = 0;
+  reg [15:0] skip_run_lines [0:255];
+  reg [15:0] skip_run_sig = 0, skip_run_prev = 0;
+  reg  [7:0] skip_run_line = 0, skip_run_diff = 0;
+  reg        skip_run_vs_old = 0, skip_run_hbl_old = 0;
   wire       skip_run_round = &skip_run_count;
+  wire       skip_run_vs = vs && !skip_run_vs_old;
   always @(posedge clk_sys_42_95) begin
-    if (ce_vid && !hbl && !vbl) skip_run_sig <= {skip_run_sig[22:0], skip_run_sig[23]} + {g, r, b};
     skip_run_vs_old <= vs;
-    if (vs && !skip_run_vs_old) begin
-      skip_run_last <= skip_run_sig;
+    skip_run_hbl_old <= hbl;
+    skip_run_prev <= skip_run_lines[skip_run_line];
+    if (ce_vid && !hbl && !vbl) skip_run_sig <= {skip_run_sig[14:0], skip_run_sig[15]} + {g, r, b};
+    if (hbl && !skip_run_hbl_old && !vbl) begin   // a line's dots done
+      skip_run_lines[skip_run_line] <= skip_run_sig;
+      if (skip_run_sig != skip_run_prev && !(&skip_run_diff)) skip_run_diff <= skip_run_diff + 1'd1;
+      skip_run_line <= skip_run_line + 1'd1;
+      skip_run_sig <= 0;
+    end
+    if (skip_run_vs) begin
+      skip_run_line <= 0;
+      skip_run_diff <= 0;
       skip_run_sig <= 0;
     end
 
@@ -886,25 +900,19 @@ end
       skip_run_black <= 1;
       skip_run_rounds <= 0;
       skip_run_sent <= 0;
-      skip_run_read <= 0;
-      skip_run_frames <= 0;
     end
     else if (ss_link_we) skip_run_black <= 0;
     else if (!ss_hold) begin
       if (cd_comm_send && !cd_comm_send_old) begin
         if (!skip_run_sent) skip_run_rounds <= 0;   // skip_run_count starts again with it
         skip_run_sent <= 1;
-        if (cd_comm[7:0] == 8'h08) skip_run_read <= 1;
       end
-      else if (skip_run_round) begin
+      else if (skip_run_round && (skip_run_sent || skip_run_enable)) begin
         skip_run_rounds <= skip_run_rounds + 1'd1;
-        if ((skip_run_sent && !skip_run_read) || (skip_run_sent && skip_run_rounds == 5'd23) ||
-            (!skip_run_sent && skip_run_rounds == 5'd7)) skip_run_black <= 0;
+        if ((skip_run_sent && skip_run_rounds == 5'd30) || (!skip_run_sent && skip_run_rounds == 5'd7))
+          skip_run_black <= 0;
       end
-      if (vs && !skip_run_vs_old && skip_run_read) begin
-        if (!skip_run_frames[2]) skip_run_frames <= skip_run_frames + 1'd1;
-        else if (skip_run_sig != skip_run_last) skip_run_black <= 0;
-      end
+      if (skip_run_vs && skip_run_sent && skip_run_diff > 8'd32) skip_run_black <= 0;
     end
   end
 
