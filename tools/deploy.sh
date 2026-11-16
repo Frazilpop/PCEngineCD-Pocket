@@ -2,7 +2,7 @@
 # PC Engine CD for Analogue Pocket: put the core on the card.
 #
 #   tools/deploy.sh [/Volumes/NAME]   copy the core onto the Pocket's card
-#   tools/deploy.sh --status          is the current build on the card?
+#   tools/deploy.sh --status          are the current build, firmware and core files on the card?
 #
 # Copies dist/Cores/frazilpop.PCEngineCD (the bitstream tools/build.sh made and
 # the core's JSONs), replacing the folder whole, and the MPU's firmware into
@@ -49,6 +49,15 @@ done
 
 built() { stat -f '%Sm' -t '%Y-%m-%d %H:%M' "$BIN"; }
 sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
+# the core's other files (interact.json, data.json, core.json...), which go on with the
+# bitstream and aren't in it: "<name> <sha256>" a line in name order, hashed. A change to
+# Core Settings alone leaves the bitstream as it was, so this is what says it's not on yet.
+core_hash() {
+	local d="$1" f
+	( cd "$d" 2>/dev/null && for f in *; do
+		[ -f "$f" ] && [ "$f" != bitstream.rbf_r ] && printf '%s %s\n' "$f" "$(sha "$f")"
+	done | LC_ALL=C sort ) | shasum -a 256 | cut -d' ' -f1
+}
 find_card() {
 	local v
 	for v in /Volumes/*; do
@@ -77,9 +86,15 @@ if [ $STATUS = 1 ]; then
 	lastfw=$(sed -n 's/^firmware //p' "$RECORD" 2>/dev/null || true)
 	if [ -n "$VOL" ] && [ -f "$VOL/Assets/pcecd/$CORE/pce_mpu_bios.bin" ]; then lastfw=$(sha "$VOL/Assets/pcecd/$CORE/pce_mpu_bios.bin"); fi
 	echo "Firmware: this one ${fw:0:12}, on the card ${lastfw:0:12}"
+	core=$(core_hash "$DIST/Cores/$CORE")
+	lastcore=$(sed -n 's/^core //p' "$RECORD" 2>/dev/null || true)
+	if [ -n "$VOL" ] && [ -d "$VOL/Cores/$CORE" ]; then lastcore=$(core_hash "$VOL/Cores/$CORE"); fi
+	lc=${lastcore:0:12}
+	echo "Core files: these ${core:0:12}, on the card ${lc:-not recorded}"
 	if [ "$last" != "$s" ]; then echo "NOT ON THE CARD - the current build has not been deployed: tools/deploy.sh"; exit 1; fi
+	if [ "$lastcore" != "$core" ]; then echo "NOT ON THE CARD - the core's files (Core Settings and the rest) have changed since the deploy: tools/deploy.sh"; exit 1; fi
 	if [ "$lastfw" != "$fw" ]; then echo "NOT ON THE CARD - the current firmware has not been deployed: tools/deploy.sh"; exit 1; fi
-	echo "UP TO DATE - the card has the current build and firmware"
+	echo "UP TO DATE - the card has the current build, firmware and core files"
 	exit 0
 fi
 
@@ -110,6 +125,7 @@ rm -rf "$VOL/Cores/$CORE"
 mkdir -p "$VOL/Cores"
 cp -R "$DIST/Cores/$CORE" "$VOL/Cores/"
 cmp -s "$BIN" "$VOL/Cores/$CORE/bitstream.rbf_r" || { echo "the bitstream on the card differs from the build"; exit 1; }
+[ "$(core_hash "$DIST/Cores/$CORE")" = "$(core_hash "$VOL/Cores/$CORE")" ] || { echo "the core's files on the card differ from the repo's"; exit 1; }
 echo "Copied the core ($CORE) to $VOL"
 
 # the MPU's firmware
@@ -131,6 +147,7 @@ mkdir -p "$(dirname "$RECORD")"
 {
 	echo "sha256 $(sha "$BIN")"
 	echo "firmware $(sha "$FW")"
+	echo "core $(core_hash "$DIST/Cores/$CORE")"
 	echo "built $(built)"
 	echo "commit $(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo '?')"
 	echo "deployed $(date '+%Y-%m-%d %H:%M')"
