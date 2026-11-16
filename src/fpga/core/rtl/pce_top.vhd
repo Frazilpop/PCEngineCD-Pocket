@@ -98,6 +98,9 @@ entity pce_top is
 		VIDEO_HBL	: out std_logic;
 		VIDEO_VBL	: out std_logic;
 		BORDER_OUT  : out std_logic;
+		-- the VDC's colour number for each dot, before the VCE's palette: main.sv's Skip the
+		-- Run screen counts the dots drawn by it, which a palette fade doesn't change
+		VIDEO_COLNO : out std_logic_vector(8 downto 0);
 
 		-- A save state (docs/SAVESTATES.md), from main.sv's state_engine.sv. SS_HOLD stops
 		-- the timer, the PSG and the CD chips where they are, and the VDC's DMAs from
@@ -670,6 +673,7 @@ generate_NOSGX: if (LITE /= 0) generate begin
 end generate;
 
 BORDER_OUT <= VDC0_BORDER;
+VIDEO_COLNO <= VDC_COLNO;
 
 --TODO: check address mirroring for HuCard games
 CPU_BRM_SEL_N <= '0' when CPU_A(20 downto 11) = x"F7"&"00" and CD_BRAM_EN = '1' else '1'; -- BRM : Page $F7

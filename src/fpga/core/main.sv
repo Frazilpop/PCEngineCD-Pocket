@@ -261,6 +261,7 @@ module pce (
   wire         cd_reset_req;
   reg          cd_region;
 	wire			CD_almost_full;
+	wire [8:0]	colno;				// the VDC's colour number, for Skip the Run screen's black
 	wire			AUDIO_almost_full;
   wire [16:0]  adram_a;
   wire [3:0]   adram_di, adram_do;
@@ -368,6 +369,7 @@ module pce (
 		.CD_almost_full		(CD_almost_full),
 		.AUDIO_almost_full	(AUDIO_almost_full),
 		.BORDER_OUT				(border),
+		.VIDEO_COLNO			(colno),
 
 		.SS_HOLD					(ss_hold),
 		.SS_RST					(ss_rst),
@@ -861,39 +863,48 @@ end
   // 2^24 clocks, 0.39 s or 23 frames a round; pressed in its last quarter, the first press 0.29 s in
   wire skip_run_press = skip_run_enable && skip_run_armed && &skip_run_count[23:22];
 
-  // and the title is never seen. The system card leaves it up, with JUST A MOMENT, until the
+  // With the setting on, the picture is also black until the game draws its own, so the
+  // title is never seen. The system card leaves it up, with JUST A MOMENT, until the
   // game draws over it (R-Type: 2.5 s after Run), and on a first start the drive may still be
   // opening the disc when Run is taken, so no command marks the moment. The picture is black
-  // from the reset until, after the first command, a frame in which more than 32 lines differ
-  // from the frame before: JUST A MOMENT in place of PUSH RUN BUTTON is one row of text, 8
-  // lines, while a game's first picture, its clear to black or the CD player is far more. Each
-  // line's dots are folded into 16 bits and kept for the next frame in one RAM block. Whatever
-  // happens it ends 31 rounds (12.1 s) after the first command, or 8 rounds (3.1 s) with the
-  // setting on if none comes, so a card that never leaves its title still shows it. A save
-  // state's chain going round lets it go, as it does the presses.
+  // from the reset until, after the first command, a frame in which more than 1000 dots came or
+  // went: each line's drawn dots (the VDC's colour numbers that aren't a palette's colour 0) are
+  // counted and kept for the next frame in one RAM block, and the lines' differences summed.
+  // The 3.0 card's title is 5,357 drawn dots; JUST A MOMENT in place of PUSH RUN BUTTON moves
+  // 103, so a game's clear or first picture, or the CD player, lifts it on its first frame.
+  // Popful Mail dissolves the title, 138 dots a frame at most for two seconds, which is why it
+  // isn't lines changed that count: on that rule the black lifted on the dissolve's first frame
+  // and the rest of it showed. Colour numbers and not colours, so a game fading the title
+  // through the palette keeps the black to its next picture. Whatever happens it ends 31
+  // rounds (12.1 s) after the first command, or 8 rounds (3.1 s) with the setting on if none
+  // comes, so a card that never leaves its title still shows it. A save state's chain going
+  // round lets it go, as it does the presses.
   reg  [4:0] skip_run_rounds = 0;
   reg        skip_run_sent = 0;
-  reg [15:0] skip_run_lines [0:255];
-  reg [15:0] skip_run_sig = 0, skip_run_prev = 0;
-  reg  [7:0] skip_run_line = 0, skip_run_diff = 0;
+  reg  [9:0] skip_run_lines [0:255];
+  reg  [9:0] skip_run_ink = 0, skip_run_prev = 0;
+  reg [15:0] skip_run_moved = 0;
+  reg  [7:0] skip_run_line = 0;
   reg        skip_run_vs_old = 0, skip_run_hbl_old = 0;
   wire       skip_run_round = &skip_run_count;
   wire       skip_run_vs = vs && !skip_run_vs_old;
+  wire [9:0] skip_run_step = skip_run_ink > skip_run_prev ? skip_run_ink - skip_run_prev : skip_run_prev - skip_run_ink;
+  wire [16:0] skip_run_sum = skip_run_moved + skip_run_step;
   always @(posedge clk_sys_42_95) begin
     skip_run_vs_old <= vs;
     skip_run_hbl_old <= hbl;
     skip_run_prev <= skip_run_lines[skip_run_line];
-    if (ce_vid && !hbl && !vbl) skip_run_sig <= {skip_run_sig[14:0], skip_run_sig[15]} + {g, r, b};
+    if (ce_vid && !hbl && !vbl && colno[3:0] != 0 && !(&skip_run_ink)) skip_run_ink <= skip_run_ink + 1'd1;
     if (hbl && !skip_run_hbl_old && !vbl) begin   // a line's dots done
-      skip_run_lines[skip_run_line] <= skip_run_sig;
-      if (skip_run_sig != skip_run_prev && !(&skip_run_diff)) skip_run_diff <= skip_run_diff + 1'd1;
+      skip_run_lines[skip_run_line] <= skip_run_ink;
+      skip_run_moved <= skip_run_sum[16] ? 16'hFFFF : skip_run_sum[15:0];
       skip_run_line <= skip_run_line + 1'd1;
-      skip_run_sig <= 0;
+      skip_run_ink <= 0;
     end
     if (skip_run_vs) begin
       skip_run_line <= 0;
-      skip_run_diff <= 0;
-      skip_run_sig <= 0;
+      skip_run_moved <= 0;
+      skip_run_ink <= 0;
     end
 
     if (reset) begin
@@ -912,7 +923,7 @@ end
         if ((skip_run_sent && skip_run_rounds == 5'd30) || (!skip_run_sent && skip_run_rounds == 5'd7))
           skip_run_black <= 0;
       end
-      if (skip_run_vs && skip_run_sent && skip_run_diff > 8'd32) skip_run_black <= 0;
+      if (skip_run_vs && skip_run_sent && skip_run_moved > 16'd1000) skip_run_black <= 0;
     end
   end
 
