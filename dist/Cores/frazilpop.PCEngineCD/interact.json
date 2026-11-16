@@ -22,26 +22,37 @@
         "value": 1
       },
       {
-        "name": "Use Turbo Tap",
-        "id": 62,
+        "name": "Arcade System",
+        "id": 73,
         "type": "check",
         "enabled": true,
-        "address": "0x00000100",
+        "address": "0xF0000004",
         "persist": true,
-        "writeonly": true,
-        "defaultval": 0,
-        "value": 1
+        "mask": "0xfffffffd",
+        "defaultval": 2,
+        "value": 2
       },
-	  {
-        "name": "CD Debug",
-        "id": 75,
+      {
+        "name": "Memory Base 128",
+        "id": 77,
         "type": "check",
         "enabled": true,
-        "address": "0xF0000008",
+        "address": "0xF0000004",
         "persist": true,
-        "writeonly": true,
+        "mask": "0xfffffff7",
         "defaultval": 0,
-        "value": 1
+        "value": 8
+      },
+      {
+        "name": "Fast CD Seek",
+        "id": 76,
+        "type": "check",
+        "enabled": true,
+        "address": "0xF0000004",
+        "persist": true,
+        "mask": "0xfffffffb",
+        "defaultval": 0,
+        "value": 4
       },
       {
         "name": "Use 6 Button Ctrl",
@@ -56,35 +67,62 @@
       },
       {
         "name": "Button I Turbo",
-        "id": 65,
-        "type": "slider_u32",
+        "id": 79,
+        "type": "list",
         "enabled": true,
         "address": "0x00000108",
         "persist": true,
         "writeonly": true,
         "defaultval": 0,
-        "graphical": {
-          "min": 0,
-          "max": 2,
-          "adjust_small": 1,
-          "adjust_large": 1
-        }
+        "options": [
+          {
+            "name": "Off",
+            "value": 0
+          },
+          {
+            "name": "Slow",
+            "value": 1
+          },
+          {
+            "name": "Fast",
+            "value": 2
+          }
+        ]
       },
       {
         "name": "Button II Turbo",
-        "id": 66,
-        "type": "slider_u32",
+        "id": 80,
+        "type": "list",
         "enabled": true,
         "address": "0x0000010C",
         "persist": true,
         "writeonly": true,
         "defaultval": 0,
-        "graphical": {
-          "min": 0,
-          "max": 2,
-          "adjust_small": 1,
-          "adjust_large": 1
-        }
+        "options": [
+          {
+            "name": "Off",
+            "value": 0
+          },
+          {
+            "name": "Slow",
+            "value": 1
+          },
+          {
+            "name": "Fast",
+            "value": 2
+          }
+        ]
+      },
+      {
+        "name": "Use Turbo Tap",
+        "id": 62,
+        "type": "check",
+        "enabled": true,
+        "address": "0x00000100",
+        "persist": true,
+        "writeonly": true,
+        "defaultval": 0,
+        "value": 1
       },
       {
         "name": "Extra Sprites",
@@ -133,17 +171,6 @@
         ]
       },
       {
-        "name": "PCM Audio Boost",
-        "id": 70,
-        "type": "check",
-        "enabled": true,
-        "address": "0x00000304",
-        "persist": true,
-        "writeonly": true,
-        "defaultval": 0,
-        "value": 1
-      },
-      {
         "name": "CD Audio Boost",
         "id": 71,
         "type": "check",
@@ -155,48 +182,26 @@
         "value": 1
       },
       {
-        "name": "US Console",
-        "id": 72,
+        "name": "ADPCM Audio Boost",
+        "id": 70,
         "type": "check",
         "enabled": true,
-        "address": "0xF0000004",
+        "address": "0x00000304",
         "persist": true,
-		"mask": "0xfffffffe",
+        "writeonly": true,
         "defaultval": 0,
         "value": 1
       },
       {
-        "name": "Arcade System",
-        "id": 73,
+        "name": "CD Debug",
+        "id": 75,
         "type": "check",
         "enabled": true,
-        "address": "0xF0000004",
+        "address": "0xF0000008",
         "persist": true,
-		"mask": "0xfffffffd",
-        "defaultval": 2,
-        "value": 2
-      },
-      {
-        "name": "Fast CD Seek",
-        "id": 76,
-        "type": "check",
-        "enabled": true,
-        "address": "0xF0000004",
-        "persist": true,
-		"mask": "0xfffffffb",
+        "writeonly": true,
         "defaultval": 0,
-        "value": 4
-      },
-      {
-        "name": "Memory Base 128",
-        "id": 77,
-        "type": "check",
-        "enabled": true,
-        "address": "0xF0000004",
-        "persist": true,
-		"mask": "0xfffffff7",
-        "defaultval": 0,
-        "value": 8
+        "value": 1
       }
     ],
     "messages": []

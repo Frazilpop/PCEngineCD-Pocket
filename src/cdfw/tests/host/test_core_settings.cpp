@@ -31,7 +31,10 @@ int main()
 	std::string json = s.str();
 	if (json.empty()) { puts("WRONG interact.json not read"); return 1; }
 
-	is(menu_value(json, "US Console"), SETTING_US_CONSOLE, "US Console's bit");
+	// US Console left the menu on 16 Nov 2026: the region comes from the system card. Its bit
+	// stays the firmware's, and no other line may set it.
+	if (json.find("\"US Console\"") != std::string::npos) { puts("WRONG US Console is back in the menu"); bad = 1; }
+	if (json.find("\"0xfffffffe\"") != std::string::npos) { puts("WRONG a line sets US Console's bit"); bad = 1; }
 	is(menu_value(json, "Arcade System"), SETTING_ARCADE, "Arcade System's bit");
 	is(menu_value(json, "Fast CD Seek"), SETTING_FAST_SEEK, "Fast CD Seek's bit");
 	is(menu_value(json, "Memory Base 128"), SETTING_MB128, "Memory Base 128's bit");
