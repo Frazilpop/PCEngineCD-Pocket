@@ -1,7 +1,7 @@
 #!/bin/sh
 # PC Engine CD for Analogue Pocket: the VDC and VCE, old against new, in GHDL.
 #
-#   tools/vdc-compare.sh [commit]   commit's chips (default 460d0b2, 0.3.0) against the tree's
+#   tools/vdc-compare.sh [commit]   commit's chips (default 0cd5a1b, 0.3.0) against the tree's
 #
 # For the common display modes it prints, per mode and chip, what the Pocket's line
 # buffer would take: pixels a line, where the display starts after HSync, how many
@@ -12,7 +12,7 @@
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/.." && pwd)
-old=${1:-460d0b2}
+old=${1:-0cd5a1b}
 image=pce-ghdl:1
 work=$repo/build/vdc-compare
 rm -rf "$work"; mkdir -p "$work/old" "$work/new"

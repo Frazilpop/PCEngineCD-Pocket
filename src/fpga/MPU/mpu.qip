@@ -1,5 +1,4 @@
 
-set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) "dmem_bram.v"]
 set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) "VexRiscv.v"]
 set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) "uart_fifo.v"]
 set_global_assignment -name VERILOG_FILE [file join $::quartus(qip_path) "MPU_AFP_CORE.v"]

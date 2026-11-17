@@ -737,9 +737,6 @@ set_instance_assignment -name CURRENT_STRENGTH_NEW 4MA -to port_ir_tx
 set_instance_assignment -name CURRENT_STRENGTH_NEW 4MA -to port_ir_rx_disable
 set_instance_assignment -name CURRENT_STRENGTH_NEW 4MA -to port_ir_rx
 set_global_assignment -name QIP_FILE MPU/mpu.qip
-set_global_assignment -name VERILOG_FILE core/rtl/CRAM/psram_controller.v
-set_global_assignment -name VERILOG_FILE core/rtl/CRAM/opb_psram_v.v
-set_global_assignment -name VERILOG_FILE core/rtl/sram_core.v
 set_global_assignment -name VERILOG_FILE core/linebuffer.v
 set_global_assignment -name SYSTEMVERILOG_FILE core/rtl/sdram.sv
 set_global_assignment -name MIF_FILE core/rtl/palette.mif
@@ -747,7 +744,6 @@ set_global_assignment -name SYSTEMVERILOG_FILE core/audio.sv
 set_global_assignment -name VERILOG_FILE core/sys/iir_filter.v
 set_global_assignment -name QIP_FILE core/rtl/HUC6280/HUC6280.qip
 set_global_assignment -name QIP_FILE core/rtl/cd/cd.qip
-set_global_assignment -name VERILOG_FILE core/rtl/xe1ap.v
 set_global_assignment -name VHDL_FILE core/rtl/pce_top.vhd
 set_global_assignment -name SYSTEMVERILOG_FILE core/rtl/mb128.sv
 set_global_assignment -name VHDL_FILE core/rtl/huc6270.vhd
@@ -755,11 +751,8 @@ set_global_assignment -name VHDL_FILE core/rtl/huc6260.vhd
 set_global_assignment -name VHDL_FILE core/rtl/huc6202.vhd
 set_global_assignment -name VERILOG_FILE core/rtl/hps_ext.v
 set_global_assignment -name VHDL_FILE core/rtl/dpram.vhd
-set_global_assignment -name SYSTEMVERILOG_FILE core/rtl/ddram.sv
 set_global_assignment -name SYSTEMVERILOG_FILE core/rtl/color_mix.sv
-set_global_assignment -name SYSTEMVERILOG_FILE core/rtl/cheatcodes.sv
 set_global_assignment -name VHDL_FILE core/rtl/CEGen.vhd
-set_global_assignment -name SYSTEMVERILOG_FILE core/rtl/cache_2way.sv
 set_global_assignment -name SYSTEMVERILOG_FILE core/rtl/arcade.sv
 set_global_assignment -name SYSTEMVERILOG_FILE core/main.sv
 set_global_assignment -name SYSTEMVERILOG_FILE core/mb128_psram.sv
@@ -774,7 +767,6 @@ set_global_assignment -name QIP_FILE apf/apf.qip
 set_global_assignment -name VERILOG_FILE core/core_top.v
 set_global_assignment -name SDC_FILE core/core_constraints.sdc
 set_global_assignment -name QIP_FILE core/mf_pllbase.qip
-set_global_assignment -name SIP_FILE core/mf_pllbase.sip
 set_global_assignment -name REMOVE_REDUNDANT_LOGIC_CELLS ON
 set_global_assignment -name AUTO_RESOURCE_SHARING ON
 set_global_assignment -name ALLOW_ANY_RAM_SIZE_FOR_RECOGNITION ON

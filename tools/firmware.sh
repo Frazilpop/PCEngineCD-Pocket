@@ -2,14 +2,12 @@
 # PC Engine CD for Analogue Pocket: build the MPU's firmware.
 #
 #   tools/firmware.sh            build src/cdfw into dist's pce_mpu_bios.bin
-#   tools/firmware.sh --check    build 0.2.3's source from git, and compare it
-#                                with the binary 0.2.3 shipped
 #
 # The firmware is C++ for the core's small RISC-V CPU (rv32imac), and the Pocket
 # loads it from the card, so a firmware change needs no Quartus. The compiler is
-# Ubuntu 24.04's GCC 13.2 in Docker, with which PR 69's author got 0.2.3's binary
-# byte for byte; the image is made here the first time, under Colima as a Quartus
-# build is. Afterwards the size is checked against the 64K the CPU has.
+# Ubuntu 24.04's GCC 13.2 in Docker, which rebuilt Mazamars312's 0.2.3 binary
+# byte for byte from its source; the image is made here the first time, under
+# Colima as a Quartus build is. Afterwards the size is checked against the 64K the CPU has.
 
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
@@ -34,27 +32,12 @@ run() { # <source folder>
     docker run --rm -v "$HOME":"$HOME" -w "$1" "$image" sh -c 'sh ./build.sh clean && sh ./build.sh'
 }
 
-if [ "${1:-}" = "--check" ]; then
-    tmp=$repo/build/fw-check
-    rm -rf "$tmp"; mkdir -p "$tmp"
-    git -C "$repo" archive 6803fdd src/cdfw | tar -x -C "$tmp"
-    git -C "$repo" show a1588ac:src/cdfw/drivers/cue/cue.cpp > "$tmp/src/cdfw/drivers/cue/cue.cpp"
-    run "$tmp/src/cdfw"
-    git -C "$repo" show 'a1588ac:dist/Assets/pcecd/Mazamars312.PC Engine CD/pce_mpu_bios.bin' > "$tmp/shipped.bin"
-    if cmp "$tmp/src/cdfw/app/build.riscv.pce_mpu_bios/pce_mpu_bios.bin" "$tmp/shipped.bin"; then
-        echo "== the same, byte for byte: 0.2.3's binary is its source"
-    else
-        echo "== they differ"; exit 1
-    fi
-    exit 0
-fi
-
 run "$repo/src/cdfw"
 bin=$repo/src/cdfw/app/build.riscv.pce_mpu_bios/pce_mpu_bios.bin
 elf=$repo/src/cdfw/app/build.riscv.pce_mpu_bios/pce_mpu_bios
 # lib/'s memset, memcpy and so on are loops. A compiler that makes one of those
 # loops a call to the function hangs the MPU at the first call, and make test
-# can't see it, as it runs on the Mac's own. 0.3.0 to 7533ff5 had this.
+# can't see it, as it runs on the Mac's own. 0.3.0 had this until 4390df9.
 lst=$repo/src/cdfw/app/build.riscv.pce_mpu_bios/pce_mpu_bios.lst
 self=$(awk '/^[0-9a-f]+ <.*>:$/ { fn = $2; sub(/:$/, "", fn) }
             /\t(jal|j)\t/ && $NF == fn && fn !~ /_exit_loop/ { print fn }' "$lst" | sort -u)
