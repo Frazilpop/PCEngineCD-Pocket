@@ -1,25 +1,70 @@
+![PC Engine CD banner](art/pcecd-banner.png)
+
 # PC Engine CD for Analogue Pocket
 
-A PC Engine CD / TurboGrafx-CD core for the Analogue Pocket.
+A PC Engine CD / TurboGrafx-CD core with save states and more.
 
-This for was originally forked from [Mazamars312's openfpga-pcengine-cd](https://github.com/Mazamars312/openfpga-pcengine-cd), which in turn is built on top of [agg23's Pocket port](https://github.com/agg23/openfpga-pcengine). The chips here are from [MiSTer's TurboGrafx16 core](https://github.com/MiSTer-devel/TurboGrafx16_MiSTer) by Gregory Estrade, srg320, greyrogue and dshadoff. CUE loading fixes by CedricPelchat, the save fix by davewongillies.
+This core was originally forked from [Mazamars312's openfpga-pcengine-cd](https://github.com/Mazamars312/openfpga-pcengine-cd), which in turn is built on top of [agg23's PC Engine / TurboGrafx-16 core](https://github.com/agg23/openfpga-pcengine). This version uses the latest MiSTer chips, fixes a whole load of bugs, and adds in some new features. Here's what you can expect:
 
-## On the card
+- **High compatibility.** CUEs with PREGAP lines, CUEs over 16K and CUEs that point into another folder all now load. Fan translations, including the English patched version of Castlevania: Rondo of Blood, can be played on this core.
+- **2K saves.** The PC Engine CD's built-in save system works reliably for saving and loading games. The Memory Base 128 is also supported.
+- **Memories and Sleep.** Pause and resume anywhere with save states and sleep/resume.
+- **Some more stuff too** including support for multi-disc games, CD+G, and the option to skip the system card title.
 
-Discs go in `Assets/pcecd/common` as `.cue` and `.bin`, in a folder each if you like. The system cards go in the same place: `bios_3_0_jap.pce` by default, with `bios_3_0_usa.pce`, `bios_2_0_usa.pce`, `bios_2_0_jap.pce` or `bios_1_0_jap.pce` as other choices. Saves go to `Saves/pcecd`.
+## Installation
 
-A CD+G disc needs its subcode beside its CUE, in a `.sub` of the CUE's name (the CloneCD form, as MiSTer's core reads), or a `TRACK nn CDG` in the CUE (2448 bytes a sector). Its pictures are on the GRAPHICS screen of the system card's CD player, on system card 2.0 or later.
+You will need an Analogue Pocket on firmware 2.3 or later. No game data or system card comes with this core: you'll need your own PC Engine CD / TurboGrafx-CD discs and a system card.
 
-## Memory Base 128
+1. Download the zip from the latest release on GitHub and copy its `Cores`, `Platforms` and `Assets` folders onto your Pocket's SD card.
+2. Copy your system card into `Assets/pcecd/common/`: `bios_3_0_jap.pce` by default, with `bios_3_0_usa.pce`, `bios_2_0_usa.pce`, `bios_2_0_jap.pce` or `bios_1_0_jap.pce` as other choices.
+3. Copy your discs into the same folder as `.cue` and `.bin` files.
+4. On the Pocket: openFPGA → PC Engine CD, then pick a disc's `.cue`.
 
-The Memory Base 128 is the add-on that gave a console 128K for saves, on top of its own 2K. Turn on Memory Base 128 in Core Settings and a game that looks for one finds one. It's off by default, as it is on MiSTer. With it on, the game's `.sav` becomes 130K: the same 2K first, then the 128K, so an old 2K save loads as it was, and the layout is MiSTer's. Turning the setting off again doesn't cut a 130K save down. Mazamars312's core, if it's on the same card, reads the same save files and only knows the first 2K, so its next quit would lose the rest.
+Saves are stored in `Saves/pcecd`.
 
-## Another disc
-
-Another disc in Core Settings puts another disc in with the game running. The console sees the tray open and shut and keeps its memory, so a game that asks for its next disc carries on. For any other game, Reset core is in the same menu. The save stays with the disc the session started on, whichever disc is in at the end: it's the console's memory, as on a real one, so a game of two discs is best started from the same one each time. All of this has been seen on a Pocket, with quits and fresh starts after swaps: each session's save landed under the disc it started on, and the other discs' saves didn't move.
+A CD+G disc needs its subcode beside its CUE, in a `.sub` of the CUE's name (the CloneCD form, the same as the MiSTer core reads), or a `TRACK nn CDG` in the CUE (2448 bytes a sector). Its pictures are on the GRAPHICS screen of the system card's CD player, on system card 2.0 or later.
 
 ## Memories and Sleep
 
-This core supports Memories and Sleep. A Memory holds the whole console: the drive's place on the disc, and CD music and voices part way through. It's 448K, 576K with the Memory Base 128 on, and up to 2.6 MB once a game has used the Arcade Card's RAM. A Memory made after Another disc puts that disc back in when it's loaded. A memory made with another system card, or with the Arcade Card in it while Arcade System is now off, won't load.
+This core supports Memories (save states) and Sleep. It's 448K, 576K with the Memory Base 128 on, and up to 2.6 MB once a game has used the Arcade Card's RAM. A memory made with another system card, or with the Arcade Card in it when Arcade System has been turned off, won't load.
 
-Licensed GPL-2.0, as what it came from.
+## Memory Base 128
+
+The Memory Base 128 is the add-on for save backups. Turn on Memory Base 128 in Core Settings and a game that looks for one finds one. It's off by default, as it is on MiSTer. With it on, the game's `.sav` becomes 130K: the same 2K first, then the 128K, so an old 2K save loads as it was. Turning the setting off again doesn't cut a 130K save down.
+
+## Core Settings
+
+| setting | what it does |
+| --- | --- |
+| **Reset core** | starts the console again from the system card, as if it had been switched off and on. A disc put in with Another disc stays in |
+| **Skip the Run screen** | bypass the system card's title. The screen will be black for slightly longer before the game boots, but overall it's quicker as there's no need to manually press the Run button |
+| **Arcade System** | an Arcade Card in the console for the games that need it. On by default. |
+| **Memory Base 128** | the 128K save add-on (Memory Base 128) |
+| **Fast CD Seek** | turn on for shorter load times. With it off, a seek takes as long as on a real drive |
+| **Use 6 Button Ctrl** | a six-button pad for fighting games etc. X and Y are III and IV, L and R are V and VI. Turbo buttons are not supported while it's on |
+| **Button I Turbo** | Off, Slow or Fast: X is button I, pressed over and over while it's held at a Slow or Fast speed |
+| **Button II Turbo** | the same for button II on Y |
+| **Use Turbo Tap** | the Turbo Tap, the console's adapter for more game pads. With it on, the Dock's controllers |
+| **Extra Sprites** | draws more sprites on a line than the console can, for less flicker. Note that some games hide things with the limit on purpose. |
+| **Raw RGB Color** | the console's colours as they are, without the core's colour palette |
+| **Master Audio Boost** | No Boost, 2x Boost or 4x Boost: louder sound, compressed so the loudest parts don't clip |
+| **CD Audio Boost** | disc music twice as loud as the console's own sound |
+| **ADPCM Audio Boost** | voices and sound effects from the ADPCM chip a quarter louder |
+| **CD Debug** | the drive's state in yellow text at the top of the screen, for tracking down a disc that won't load |
+| **Another disc** | puts another disc in with the game running |
+| **PCE Boot Rom** | another system card from `Assets/pcecd/common`. The core will restart. |
+
+## Credits and licence
+
+- **Murray Aickin (Mazamars312)** – openfpga-pcengine-cd, the CD side for the Pocket: the MPU, the RISC-V CPU round it and its firmware, whose history this repo continues.
+- **Adam Gastineau (agg23)** – openfpga-pcengine, the PC Engine core for the Pocket that it started from, and the Pocket utilities used for loading and sound.
+- **MiSTer's TurboGrafx16 core** – Gregory Estrade, who wrote the HuC6280 and the first PC Engine in an FPGA, with Sergey Dvodnenko (srg320), GreyRogue, Alexey Melnikov (Sorgelig) and David Shadoff (dshadoff). The chips here are theirs, and the drive's firmware is a port of MiSTer's CD drive.
+- **CedricPelchat** – the CUE loader's fixes and its tests; **davewongillies** – the save fix and the default system card.
+- **Dennis van Weeren and Jakub Bednarski** – Minimig's OSD; **Alastair Robinson** – EightThirtyTwo's interrupt code; **Marco Paland** – printf; **Serge Vakulenko** – uOS's scanf, all in the firmware.
+- **SpinalHDL** – VexRiscv, the MPU's CPU.
+- **Analogue** – the openFPGA core framework.
+- Pocket core by **Frazilpop**.
+
+GPL-3.0. [`THIRD-PARTY.md`](THIRD-PARTY.md) lists every part with its licence.
+
+PC Engine and TurboGrafx are trademarks of Konami Digital Entertainment. This project contains no game data, system card or disc image.

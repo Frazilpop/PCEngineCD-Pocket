@@ -1,5 +1,4 @@
-Orginal Port by agg23, PCECD core parts added by Mazamars312 for Analogue Pocket. Core by Gregory Estrade, srg320, and greyrogue
+PC Engine CD-ROM² / TurboGrafx-CD core with save states.
 
-The CD-ROM² is an add-on attachment for the PC Engine that was released in Japan on December 4, 1988. The add-on allows the core versions of the console to play PC Engine games in CD-ROM format in addition to standard HuCards. This made the PC Engine the first video game console to use CD-ROM as a storage media.
-
-Currently supports standard PC Engine/TurboGrafx CD Roms only. A core of its own, from Mazamars312's (github.com/Mazamars312/openfpga-pcengine-cd), with MiSTer's chips. Its issues are its own, not Mazamars312's.
+Built from Mazamars312's openfpga-pcengine-cd, itself based on agg23's PC Engine port, with the chips from MiSTer's TurboGrafx16 core by Gregory Estrade, srg320, greyrogue and dshadoff. The MiSTer CD drive run as firmware on a small RISC-V CPU inside the core.
+Analogue Pocket core by Frazilpop.
