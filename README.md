@@ -15,7 +15,7 @@ This core was originally forked from [Mazamars312's openfpga-pcengine-cd](https
 
 You will need an Analogue Pocket on firmware 2.3 or later. No game data or system card comes with this core: you'll need your own PC Engine CD / TurboGrafx-CD discs and a system card.
 
-1. Download the zip from the latest release on GitHub and copy its `Cores`, `Platforms` and `Assets` folders onto your Pocket's SD card.
+1. Download the zip from the latest release on GitHub and merge `Cores`, `Platforms` and `Assets` into the folders already on your Analogue Pocket's SD card.
 2. Copy your system card into `Assets/pcecd/common/`: `bios_3_0_jap.pce` by default, with `bios_3_0_usa.pce`, `bios_2_0_usa.pce`, `bios_2_0_jap.pce` or `bios_1_0_jap.pce` as other choices.
 3. Copy your discs into the same folder as `.cue` and `.bin` files.
 4. On the Pocket: openFPGA → PC Engine CD, then pick a disc's `.cue`.
@@ -44,7 +44,7 @@ The Memory Base 128 is the add-on for save backups. Turn on Memory Base 128 in C
 | **Use 6 Button Ctrl** | a six-button pad for fighting games etc. X and Y are III and IV, L and R are V and VI. Turbo buttons are not supported while it's on |
 | **Button I Turbo** | Off, Slow or Fast: X is button I, pressed over and over while it's held at a Slow or Fast speed |
 | **Button II Turbo** | the same for button II on Y |
-| **Use Turbo Tap** | the Turbo Tap, the console's adapter for more game pads. With it on, the Dock's controllers |
+| **Use Turbo Tap** | the Turbo Tap, the console's adapter for more game pads. With it on, the Dock's second to fourth controllers play as players 2 to 4. With it off, only the first controller is used. |
 | **Extra Sprites** | draws more sprites on a line than the console can, for less flicker. Note that some games hide things with the limit on purpose. |
 | **Raw RGB Color** | the console's colours as they are, without the core's colour palette |
 | **Master Audio Boost** | No Boost, 2x Boost or 4x Boost: louder sound, compressed so the loudest parts don't clip |
