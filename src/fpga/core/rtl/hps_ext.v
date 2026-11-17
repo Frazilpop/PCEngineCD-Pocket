@@ -33,7 +33,7 @@ module hps_ext
 	input 					AUDIO_almost_full,
 	input 					CD_almost_full,
 
-	// a save state (docs/SAVESTATES.md): held, the count of the chips' events stands still and
+	// a save state (state_engine.sv): held, the count of the chips' events stands still and
 	// the bus is ignored (a save's drive is parked; a load's may finish its pass); its 123 bits
 	// out at ss_q, in from ss_d at ss_we
 	input 					ss_hold,

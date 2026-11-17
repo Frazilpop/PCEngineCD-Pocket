@@ -1,4 +1,4 @@
-"""Two save states compared region by region (docs/SAVESTATES.md, The format).
+"""Two save states compared region by region (the layout is state_engine.sv's).
 
     python3 -I tools/state-dump.py A.state B.state     what differs between them
     python3 -I tools/state-dump.py A.state             the header, and which regions hold anything

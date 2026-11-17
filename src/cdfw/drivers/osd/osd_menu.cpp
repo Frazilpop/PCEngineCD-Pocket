@@ -33,7 +33,7 @@ uint8_t nstore3;
 uint8_t frame_counter = 0;
 
 // The trace is the CD Debug setting's. Forced on while every disc stopped at the
-// Run screen (2 Nov 2026); docs/PLAN.md says how to read it.
+// Run screen (2 Nov 2026).
 #define DEBUG_OVERLAY_ON (AFP_REGISTOR(2) == 1)
 
 drive_trace_t drive_trace = { 'w' };

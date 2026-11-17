@@ -37,7 +37,7 @@ entity HUC6280 is
 		AUD_LDATA: out std_logic_vector(23 downto 0);
 		AUD_RDATA: out std_logic_vector(23 downto 0);
 
-		-- A save state (docs/SAVESTATES.md). SS_HOLD stops the timer, the PSG and their
+		-- A save state (state_engine.sv). SS_HOLD stops the timer, the PSG and their
 		-- divider; SS_RST resets the chip alone, for a state to be loaded into it. Two
 		-- chains, 16 bits a clock: the CPU's (the core's 144 bits, then the timer and the
 		-- rest's 64) and the PSG's. SS_SYNC: the core at an opcode fetch with no wait

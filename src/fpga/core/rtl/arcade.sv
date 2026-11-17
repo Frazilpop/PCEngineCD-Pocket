@@ -32,7 +32,7 @@ module ARCADE_CARD
 	output        RAM_CS_N,
 	output [20:0] RAM_A,
 
-	// a save state (docs/SAVESTATES.md): the registers as a chain of 304 bits, 16 a clock while
+	// a save state (state_engine.sv): the registers as a chain of 304 bits, 16 a clock while
 	// SS_SHIFT. The card changes only when the CPU reaches it, so it needs no hold.
 	input         SS_SHIFT,
 	input  [15:0] SS_SI,

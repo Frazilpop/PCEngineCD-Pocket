@@ -92,7 +92,7 @@ static void first_load()
 	osd_trace_stage(cue.loaded ? 'r' : 'f');
 }
 
-// ---- Save states (docs/SAVESTATES.md, The drive; app/state.h) ----
+// ---- Save states (app/state.h: what the drive keeps of itself) ----
 //
 // The drive's block: 2K at 0xF000 in the MPU's RAM, above _end, where neither the image
 // nor its stack reaches. The bridge reads and writes it as the state file's 0x800 to 0xFFF.
@@ -231,8 +231,8 @@ static void park()
 // landed, so the loop's top, where the drive parks, comes between. The tick then finds them
 // all in the cache and goes on as it always has. A Memory asked as a boss's music starts (a
 // track's file opened, its first buffer read) was refused for this on the Pocket, as the
-// tick waited inside on a card the Pocket wasn't answering (docs/PLAN.md, A Memory refused
-// once in Dracula X). A full load's read ahead is started last, just before the tick, as
+// tick waited inside on a card the Pocket wasn't answering (seen once, in Dracula X at a
+// boss's entrance). A full load's read ahead is started last, just before the tick, as
 // RISCFileSeek starts it.
 static bool tick_reads_ready()
 {

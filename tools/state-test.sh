@@ -1,5 +1,5 @@
 #!/bin/bash
-# Save states in the simulation, proved (docs/SAVESTATES.md, The proofs): a save at
+# Save states in the simulation, proved: a save at
 # frame F and the run going on; the state loaded into a fresh run and, before it lets
 # go, read straight back out; then from the clock each lets go, the two compared frame
 # by frame (the picture, and the chips' sound on every clock) for N frames. Each run ends N

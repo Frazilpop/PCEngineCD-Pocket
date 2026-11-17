@@ -60,7 +60,7 @@ entity cd is
 		CD_SR			: out signed(15 downto 0);
 		AD_S			: out signed(15 downto 0);
 
-		-- A save state (docs/SAVESTATES.md). SS_HOLD stops every register here, in SCSI.vhd,
+		-- A save state (state_engine.sv). SS_HOLD stops every register here, in SCSI.vhd,
 		-- MSM5205.vhd and the two CEGens wherever they are (EN can't: it also turns off the
 		-- selects, the CD RAM and the backup RAM's lock). The registers go out as a chain of
 		-- 672 bits, 16 a clock while SS_SHIFT. SS_FREEZE_OK: the ADPCM memory has nothing in

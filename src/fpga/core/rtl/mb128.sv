@@ -25,7 +25,7 @@ module MB128
 	output reg    ram_we,
 	input         ram_dout,
 
-	// a save state (docs/SAVESTATES.md): ss_hold stops it; its 80 bits out at ss_q, in from
+	// a save state (state_engine.sv): ss_hold stops it; its 80 bits out at ss_q, in from
 	// ss_d at ss_we
 	input         ss_hold,
 	output [79:0] ss_q,

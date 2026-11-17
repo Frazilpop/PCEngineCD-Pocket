@@ -40,7 +40,7 @@ entity SCSI is
 		
 		DBG_DATAIN_CNT: out unsigned(15 downto 0);
 
-		-- A save state (docs/SAVESTATES.md): SS_HOLD stops it; its 251 bits out at SS_Q, and in
+		-- A save state (state_engine.sv): SS_HOLD stops it; its 251 bits out at SS_Q, and in
 		-- from SS_D at SS_WE. While held, the FIFO is the engine's: SS_FIFO_RD takes its head
 		-- (SS_FIFO_Q, before), SS_FIFO_WR puts SS_FIFO_D at its tail, SS_FIFO_CLR empties it;
 		-- SS_FIFO_CNT is how many it holds.

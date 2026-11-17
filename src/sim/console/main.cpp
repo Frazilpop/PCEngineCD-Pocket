@@ -8,7 +8,7 @@
 //            [--mb128] [--save-in FILE] [--save-out FILE] [--press-file FILE] [--skip-run]
 //            [--state-save F FILE] [--state-load FILE [--load-at F] [--resave FILE]]
 //
-// Save states (docs/SAVESTATES.md, The proofs), through main.sv's window to
+// Save states (tools/state-test.sh runs the proofs), through main.sv's window to
 // state_engine.sv, as state_bridge.sv drives it:
 //   --state-save F FILE   at frame F find the clean point, read the state out into
 //                         FILE, and let the console go on

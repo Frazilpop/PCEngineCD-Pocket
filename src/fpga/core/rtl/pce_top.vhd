@@ -102,7 +102,7 @@ entity pce_top is
 		-- Run screen counts the dots drawn by it, which a palette fade doesn't change
 		VIDEO_COLNO : out std_logic_vector(8 downto 0);
 
-		-- A save state (docs/SAVESTATES.md), from main.sv's state_engine.sv. SS_HOLD stops
+		-- A save state (main.sv's state_engine.sv). SS_HOLD stops
 		-- the timer, the PSG and the CD chips where they are, and the VDC's DMAs from
 		-- starting; SS_RST resets the CPU and the VDC alone, for a state to go into them.
 		-- SS_SHIFT moves the chain SS_CHAIN chooses by 16 bits, SS_SI in at its foot, its

@@ -13,7 +13,7 @@ ENTITY CEGen IS
 
 		CE        : out STD_LOGIC;
 
-		-- A save state (docs/SAVESTATES.md): SS_HOLD stops it; its 28 bits out at SS_Q, and
+		-- A save state (state_engine.sv): SS_HOLD stops it; its 28 bits out at SS_Q, and
 		-- in from SS_D at SS_WE. The sum is a signal for this, where MiSTer's is a variable.
 		SS_HOLD   : in  STD_LOGIC := '0';
 		SS_Q      : out STD_LOGIC_VECTOR(27 downto 0);

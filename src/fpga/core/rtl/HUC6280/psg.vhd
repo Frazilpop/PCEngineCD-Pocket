@@ -19,7 +19,7 @@ entity psg is
 		LDATA		: out std_logic_vector(23 downto 0);
 		RDATA		: out std_logic_vector(23 downto 0);
 
-		-- A save state (docs/SAVESTATES.md): SS_HOLD stops every register; the registers go out
+		-- A save state (state_engine.sv): SS_HOLD stops every register; the registers go out
 		-- as a chain of 608 bits, 16 a clock while SS_SHIFT; while held, the waves are read and
 		-- written at SS_WF_A (channel, entry).
 		SS_HOLD	: in std_logic := '0';

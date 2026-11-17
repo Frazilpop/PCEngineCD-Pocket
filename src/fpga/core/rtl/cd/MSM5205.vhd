@@ -17,7 +17,7 @@ entity MSM5205 is
 		
 		SOUT		: out signed(15 downto 0);
 
-		-- A save state (docs/SAVESTATES.md): SS_HOLD stops it; its 35 bits out at SS_Q, and in
+		-- A save state (state_engine.sv): SS_HOLD stops it; its 35 bits out at SS_Q, and in
 		-- from SS_D at SS_WE.
 		SS_HOLD	: in std_logic := '0';
 		SS_Q		: out std_logic_vector(34 downto 0);

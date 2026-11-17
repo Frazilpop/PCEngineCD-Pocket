@@ -262,7 +262,7 @@ uint32_t RISCFileSeek(const char *s, uint32_t offset, uint32_t size, uint32_t tr
 // until it has landed, when this is true and the seek finds it all in the buffers. On the
 // Pocket the card may not be answered while a Memory is made, and a tick waiting inside
 // itself never let the drive park; the loop's top, where it parks, now comes between
-// (docs/SAVESTATES.md, The drive). Only with nothing under way on the card (dataslot_ready).
+// (app/state.h). Only with nothing under way on the card (dataslot_ready).
 // The open and the full load are RISCFileSeek's own, in its order; only the wait has moved.
 bool RISCFileSeekReady(const char *s, uint32_t offset, uint32_t size, dataslot_type *aft) {
   if (open_pending) {

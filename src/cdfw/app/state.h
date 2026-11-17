@@ -1,4 +1,4 @@
-// Save states (docs/SAVESTATES.md, The drive): what the drive keeps of itself through a
+// Save states, the drive's side: what the drive keeps of itself through a
 // state, and its hooks to the core. Asked to park, the drive stops at the top of a pass,
 // writes its state into its block and waits; on a load it reads the block back first. Its
 // clock stands still while it is parked, so every time it holds stays good.

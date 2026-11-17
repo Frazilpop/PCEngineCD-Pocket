@@ -27,7 +27,7 @@ SIM_SDRAM_STRICT=1 bash tools/sim.sh ...           # an SDRAM access inside tRC 
 `--press-file FILE` takes lines of `F:buttons[:N]` from a file as the run goes, to steer a menu you can
 only see once you're there: look at the last frame, add a line a few frames on.
 
-**Save states** (docs/SAVESTATES.md, *The proofs*): `--state-save F FILE`, `--state-load FILE
+**Save states** (`tools/state-test.sh` runs the proofs): `--state-save F FILE`, `--state-load FILE
 [--load-at F] [--resave FILE]`, through `main.sv`'s window to `state_engine.sv`. With `--pocket`
 they go through the Pocket's side instead: `pocket_sim.sv`, a Verilator model of its own beside
 `sim_top`, holds `state_bridge.sv`, the MPU's RAM as `controller_rom.v`'s Main_Bram with its block
@@ -123,16 +123,16 @@ fits each mix. `tools/testcard.py`'s `sound.pce` is the card for it (`--card bui
 --frames 420`): MAME runs it to the end, and its ADPCM tone is checked against the MSM5205's own
 decoding, as MAME 0.289's ADPCM is no reference. On 9 Nov 2026 CD audio was the disc's samples at the
 mix's 5/16, the PSG and ADPCM matched, and the one difference was the PSG's LFO, which is MiSTer's
-(docs/PLAN.md, *The simulation's sound against MAME's*).
+(the LFO took the wrong bit; this core's `psg.vhd` has it fixed).
 
-**What a real game does here, 3 Nov 2026** (docs/PLAN.md has it in full): Popful Mail, R-Type
+**What a real game does here, 3 Nov 2026**: Popful Mail, R-Type
 Complete CD and Mad Stalker with `--arcade` all reach their games, with no hang, and the frames match
 MAME's dot for dot but for a raster window's edge one line later. The title takes Run from frame 30;
 the sim then runs behind MAME by the seeks, 37 frames at the first logo and 100 to 250 later.
 
 The test card passes in MAME too, whose drive is its own code: the same TOC, the same sums.
 READ SUBQ's second byte, the control and address, is 0 here and 41 in MAME; `cue.cpp` sets it to 0
-and no check reads it (docs/PLAN.md). MAME's picture is 1088 wide, four across to a dot at
+and no check reads it. MAME's picture is 1088 wide, four across to a dot at
 5.37 MHz, and its seeks take less time, so frames pair up by what they show and not by number.
 
 ## How it is built

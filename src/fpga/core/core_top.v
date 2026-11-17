@@ -957,7 +957,7 @@ MPU_AFP_CORE #(
       clk_74a
   );
 
-  // ---- save states (docs/SAVESTATES.md): the Pocket's bridge to main.sv's state_engine.sv ----
+  // ---- save states: the Pocket's bridge to main.sv's state_engine.sv ----
   // The file is the 0x4 window, 0x40000000. Its bytes 0x800 to 0xFFF are the drive's block, the
   // MPU's RAM from 0xF000, read and written there through MPU_AFP_CORE. Offered to the Pocket
   // since 6 Nov 2026, with core.json's sleep_supported.

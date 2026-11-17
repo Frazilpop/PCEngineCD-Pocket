@@ -46,7 +46,7 @@ entity huc6260 is
 		HBL		: out std_logic;
 		VBL		: out std_logic;
 
-		-- A save state (docs/SAVESTATES.md): the raster's position, which a let-go waits for;
+		-- A save state (state_engine.sv): the raster's position, which a let-go waits for;
 		-- the registers as a chain of 48 bits, 16 a clock while SS_SHIFT; while SS_MEM, the
 		-- palette's CPU port is the engine's (SS_MA, SS_MWE, SS_MD, and SS_MQ a clock later).
 		-- SS_IDLE: the CPU port has nothing on its way. The counters and the syncs are never

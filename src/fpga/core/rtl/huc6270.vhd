@@ -39,7 +39,7 @@ entity HUC6270 is
 		BG_EN		: in std_logic;
 		SPR_EN	: in std_logic;
 
-		-- A save state (docs/SAVESTATES.md). The VDC never stops: SS_HOLD only keeps the two
+		-- A save state (state_engine.sv). The VDC never stops: SS_HOLD only keeps the two
 		-- DMAs from starting. The registers go out as a chain of 368 bits, 16 a clock while
 		-- SS_SHIFT. What the VDC changes by itself while the CPU is frozen (the interrupt flags,
 		-- the shadows of the display registers, the vertical raster) is snapped at SS_SNAP and

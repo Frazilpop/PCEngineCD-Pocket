@@ -1,4 +1,4 @@
-// Save states: the console's side (docs/SAVESTATES.md). On clk_sys, in main.sv.
+// Save states: the console's side. On clk_sys, in main.sv.
 //
 // A save: SS_SAVE finds the clean point (the vertical blank, the CPU parked at an opcode
 // fetch, nothing on its way anywhere) and freezes the console there; the file is then read
@@ -151,7 +151,7 @@ module state_engine (
 
 localparam [31:0] CLK_HZ = 32'd42954545;
 
-// ---- the file (docs/SAVESTATES.md, The format), in words ----
+// ---- the file's layout, in words ----
 localparam [20:0] W_HDR_END   = 21'h00080;		// the header, 256 bytes
 localparam [20:0] W_CHAINS    = 21'h00080;		// the chains, 64 words a slot from byte 0x100
 localparam [20:0] W_CHAIN_END = 21'h00280;		// eight slots

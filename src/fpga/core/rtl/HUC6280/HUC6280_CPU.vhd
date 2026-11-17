@@ -25,7 +25,7 @@ entity HUC6280_CPU is
 		MCYCLE  	: out std_logic;
 		CS  		: out std_logic;
 
-		-- A save state (docs/SAVESTATES.md): the registers as a chain of 144 bits, 16 a clock
+		-- A save state (state_engine.sv): the registers as a chain of 144 bits, 16 a clock
 		-- while SS_SHIFT, in at SS_SI and out at SS_SO. SS_SYNC: at an opcode fetch, out of reset.
 		SS_SHIFT	: in std_logic := '0';
 		SS_SI		: in std_logic_vector(15 downto 0) := (others => '0');
