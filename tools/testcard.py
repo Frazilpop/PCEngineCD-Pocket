@@ -2,7 +2,8 @@
 
     python3 -I tools/testcard.py build/sim/test
 
-Makes build/sim/test/card.pce and Test Disc.cue with its two files, and sound.pce (below). Made here, a few
+Makes build/sim/test/card.pce and Test Disc.cue with its two files, sound.pce (below), and
+card_dot1.pce and card_dot2.pce, card.pce at 7.16 and 10.74 MHz dots, 336 and 512 wide. Made here, a few
 hundred bytes of HuC6280 code written out by hand, so the sim has a card and a disc that
 are the repo's own to commit (a system card and the games are never committed). It stands where a
 system card does and asks the drive what a game's boot does:
@@ -233,7 +234,7 @@ AD_OFFS_LO, AD_OFFS_HI, AD_DATA, AD_DMA, AD_STAT, AD_CTL, AD_RATE = 0x1808, 0x18
 KEY, HELD = 0x10 + 18, 0x10 + 19
 
 
-def build(total, sound=False):
+def build(total, sound=False, dot=0):
     a = Asm(0xE000)
 
     a.label('reset')
@@ -254,8 +255,10 @@ def build(total, sound=False):
     a.lda(0); a.sta_a(0x0C01)
     a.lda(0x05); a.sta_a(0x1402)
     a.lda_a(0x0000)             # ack the VDC
-    # the VCE: 5.37 MHz dots; the backdrop red, text white, sprite yellow
-    a.lda(0); a.sta_a(0x0400)
+    # the VCE: 5.37 MHz dots (dot: 1 7.16 MHz, 2 10.74 MHz); the backdrop red, text white, sprite yellow
+    a.lda(dot); a.sta_a(0x0400)
+    if dot:
+        a.lda(0)
     a.sta_a(0x0402); a.sta_a(0x0403)
     a.lda(0x38); a.sta_a(0x0404); a.lda(0x00); a.sta_a(0x0405)    # colour 0: red (G 0, R 7, B 0)
     a.lda(0xFF); a.sta_a(0x0404); a.lda(0x01); a.sta_a(0x0405)    # colour 1: white
@@ -263,8 +266,11 @@ def build(total, sound=False):
     a.lda(0x00); a.sta_a(0x0404); a.sta_a(0x0405)
     a.lda(0xF8); a.sta_a(0x0404); a.lda(0x01); a.sta_a(0x0405)    # yellow
 
-    # the VDC's registers, as a card's start-up sets them for 256 x 240
-    for reg, val in ((0x05, 0x0000), (0x06, 0), (0x07, 0), (0x08, 0), (0x09, 0x0000), (0x0A, 0x0202), (0x0B, 0x031F),
+    # the VDC's registers, as a card's start-up sets them for 256 x 240 (336 and 512 wide at
+    # the faster dots, the line's tiles made up in the end of display)
+    # (each line's tiles the same, the display's start later to put the picture inside the VCE's window)
+    hsr, hdr = ((0x0202, 0x031F), (0x0502, 0x0529), (0x0A02, 0x063F))[dot]
+    for reg, val in ((0x05, 0x0000), (0x06, 0), (0x07, 0), (0x08, 0), (0x09, 0x0000), (0x0A, hsr), (0x0B, hdr),
                      (0x0C, 0x0F02), (0x0D, 0x00EF), (0x0E, 0x0004), (0x0F, 0x0010), (0x13, 0x7F00)):
         a.st0(reg); a.st1(val & 0xFF); a.st2(val >> 8)
     # the tiles, at VRAM 0x1000: a glyph's tile is 0x100 + its place in CHARS
@@ -988,6 +994,10 @@ def main():
     sound[0x2000:0x2000 + len(ADPCM_TONE)] = ADPCM_TONE      # bank 1, which the sound program puts on MPR3
     with open(os.path.join(out, 'sound.pce'), 'wb') as f:
         f.write(sound)
+    # the same card at 7.16 and 10.74 MHz dots, for the Analogizer's picture (tools/anz-test.sh)
+    for dot in (1, 2):
+        with open(os.path.join(out, f'card_dot{dot}.pce'), 'wb') as f:
+            f.write(build(total, dot=dot))
 
 
 if __name__ == '__main__':

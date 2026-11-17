@@ -97,17 +97,36 @@ verilator --cc --build -j 0 -O3 --x-assign fast --x-initial fast --noassert --ti
 echo "Building the simulation (Verilator; some minutes the first time)"
 SRC=("$S/sim_top.sv" "$R/../main.sv" "$R/../audio.sv" "$R/../sys/iir_filter.v" "$R/../linebuffer.v"
      "$R/../state_engine.sv" "$R/hps_ext.v" "$R/color_mix.sv" "$R/arcade.sv" "$R/mb128.sv" "$R/../mb128_psram.sv" "$R/../adpcm_psram.sv" "$S/psram_sim.sv" "$S/bram.sv" "$S/sdram_sim.sv" "$B/gen/pce_top.sv" "$S/main.cpp")
+# SIM_VFLAGS=-DANZ: the Analogizer in front of the line buffer (tools/anz-test.sh), its
+# module with two of its files as Verilator needs them, as the other cores' benches have
+# them: scandoubler.v's colour-depth branch for a remainder it never has here selects zero
+# bits, which Quartus passes over and Verilator refuses, so the width is held at one;
+# serlatch_gc.v reads a seventeenth bit from NES and SNES pads into bit 16 of a 16-bit
+# register, a write that does nothing in Quartus and that Verilator wraps onto bit 0
+ANZ_SRC=(); ANZ_C=""
+case " ${SIM_VFLAGS:-} " in *" -DANZ "*)
+  A=$PWD/src/fpga/analogizer
+  mkdir -p "$B/anz"
+  sed 's/ -:n\]/ -:(n>0?n:1)]/g' "$A/scandoubler.v" > "$B/anz/scandoubler_sim.v"
+  sed 's/^\( *\)\(p[12]b_r\[((counter>>1)-1)\] <= i_dat[12];\)/\1if (((counter>>1)-1) < 6'"'"'d16) \2/' \
+    "$A/serlatch_gc.v" > "$B/anz/serlatch_gc_sim.v"
+  cmp -s "$A/serlatch_gc.v" "$B/anz/serlatch_gc_sim.v" && { echo "serlatch_gc.v: the bench's change no longer applies" >&2; exit 1; }
+  ANZ_SRC=("$PWD/src/fpga/core/pocket_analogizer.sv" "$A/openFPGA_Pocket_Analogizer.v" "$A/openFPGA_Pocket_Analogizer_SNAC.sv"
+           "$A/vga_out_sw.v" "$A/clock_divider_fract.v" "$A/pcengine_gc.v" "$A/pcengine_game_controller_multitap.v" "$A/yc_out.sv"
+           "$B/anz/scandoubler_sim.v" "$B/anz/serlatch_gc_sim.v" "$PWD/src/fpga/apf/common.v")
+  ANZ_C=" -DANZ" ;;
+esac
 verilator --cc --exe --build -j 0 -O3 --x-assign fast --x-initial fast --noassert \
-  -Wno-fatal -Wno-lint -Wno-style -Wno-MULTIDRIVEN -Wno-COMBDLY -Wno-LATCH -Wno-UNOPTFLAT -Wno-INITIALDLY -Wno-PROCASSWIRE -Wno-MULTITOP \
+  -Wno-fatal -Wno-lint -Wno-style -Wno-MULTIDRIVEN -Wno-COMBDLY -Wno-LATCH -Wno-UNOPTFLAT -Wno-INITIALDLY -Wno-PROCASSWIRE -Wno-MULTITOP -Wno-TIMESCALEMOD \
   --top-module sim_top -Mdir "$B/obj" ${SIM_VFLAGS:-} \
-  -CFLAGS "-O2 -I$S -I$PWD/src/cdfw/app -I$B/pocket" -LDFLAGS "-lz $B/fw/drive.o $B/fw/sscanf.o $B/fw/vscanf.o $B/fw/stropen.o $B/pocket/Vpocket__ALL.a" -MAKEFLAGS OPT_FAST=-O3 \
-  "${SRC[@]}" > "$B/verilator.log" 2>&1 || { grep -E '%Error' "$B/verilator.log" | head -30; tail -5 "$B/verilator.log"; exit 1; }
+  -CFLAGS "-O2$ANZ_C -I$S -I$PWD/src/cdfw/app -I$B/pocket" -LDFLAGS "-lz $B/fw/drive.o $B/fw/sscanf.o $B/fw/vscanf.o $B/fw/stropen.o $B/pocket/Vpocket__ALL.a" -MAKEFLAGS OPT_FAST=-O3 \
+  "${SRC[@]}" ${ANZ_SRC[@]+"${ANZ_SRC[@]}"} > "$B/verilator.log" 2>&1 || { grep -E '%Error' "$B/verilator.log" | head -30; tail -5 "$B/verilator.log"; exit 1; }
 echo "3 of 3 build steps"
 }
 
 [ -n "${NO_BUILD:-}" ] || build
 
-rm -f "$OUT"/f_*.png "$OUT"/frames.txt "$OUT"/audio.wav "$OUT"/run.json "$OUT"/drive.log
+rm -f "$OUT"/f_*.png "$OUT"/frames.txt "$OUT"/audio.wav "$OUT"/run.json "$OUT"/drive.log "$OUT"/anz_*
 TEST=""
 if [ $# -eq 0 ]; then
   TEST=1

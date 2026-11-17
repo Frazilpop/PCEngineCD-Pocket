@@ -738,6 +738,8 @@ set_instance_assignment -name CURRENT_STRENGTH_NEW 4MA -to port_ir_rx_disable
 set_instance_assignment -name CURRENT_STRENGTH_NEW 4MA -to port_ir_rx
 set_global_assignment -name QIP_FILE MPU/mpu.qip
 set_global_assignment -name VERILOG_FILE core/linebuffer.v
+set_global_assignment -name QIP_FILE analogizer/analogizer.qip
+set_global_assignment -name SYSTEMVERILOG_FILE core/pocket_analogizer.sv
 set_global_assignment -name SYSTEMVERILOG_FILE core/rtl/sdram.sv
 set_global_assignment -name MIF_FILE core/rtl/palette.mif
 set_global_assignment -name SYSTEMVERILOG_FILE core/audio.sv

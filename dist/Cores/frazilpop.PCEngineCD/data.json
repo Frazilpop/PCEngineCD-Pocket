@@ -71,6 +71,15 @@
 	"deferload": true,
 	"size_maximum": "0x10000",
 	"extensions": ["cue"]
+	},
+	{
+	"name": "Analogizer config",
+	"id": 330,
+	"required": false,
+	"parameters": "0x1000000",
+	"filename": "analogizer.bin",
+	"extensions": ["bin"],
+	"address": "0xF7000000"
 	}
 	]
 }

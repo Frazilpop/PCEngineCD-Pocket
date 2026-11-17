@@ -232,32 +232,11 @@ module core_top (
   // bridge endianness
   assign bridge_endian_little    = 0;
 
-  // cart is unused, so set all level translators accordingly
-  // directions are 0:IN, 1:OUT
- assign cart_tran_bank3 = 8'hzz;            // these pins are not used, make them inputs
- assign cart_tran_bank3_dir = 1'b0;
- 
- assign cart_tran_bank2 = 8'hzz;            // these pins are not used, make them inputs
- assign cart_tran_bank2_dir = 1'b0;
- assign cart_tran_bank1 = 8'hzz;            // these pins are not used, make them inputs
- assign cart_tran_bank1_dir = 1'b0;
- 
- assign cart_tran_bank0 = {1'b0, TXDATA, LED, 1'b0};    // LED and TXD hook up here
- assign cart_tran_bank0_dir = 1'b1;
- 
- assign cart_tran_pin30 = 1'bz;            // this pin is not used, make it an input
- assign cart_tran_pin30_dir = 1'b0;
- assign cart_pin30_pwroff_reset = 1'b1;    
- 
- assign cart_tran_pin31 = 1'bz;            // this pin is an input
- assign cart_tran_pin31_dir = 1'b0;        // input
- // UART
- wire TXDATA;                        // your UART transmit data hooks up here
- wire RXDATA = cart_tran_pin31;        // your UART RX data shows up here
- 
- // button/LED
- wire LED = 0;                    // LED hooks up here.  HIGH = light up, LOW = off
- wire BUTTON = cart_tran_bank3[0];    // button data comes out here.  LOW = pressed, HIGH = unpressed
+  // the cartridge slot is the Analogizer's (pocket_analogizer.sv, below), and with no
+  // adapter or no analogizer.bin it is as the template leaves it, but bank0 out with the
+  // MPU's debug UART on bank0[6] and its input on pin31
+  wire TXDATA;                        // the UART's transmit data
+  wire RXDATA;                        // its receive data, pin31's with no adapter
 
   // link port is input only
   assign port_tran_so            = 1'bz;
@@ -879,6 +858,11 @@ MPU_AFP_CORE #(
       clk_sys_42_95
   );
 
+  // Each player's controls: the Pocket's, or an Analogizer's SNAC controller where
+  // analogizer.bin gives it that player (pocket_analogizer.sv), in the same order
+  wire [15:0] key1_s, key2_s, key3_s, key4_s;
+  wire anz_pocket_off;                // the Pocket's own screen black, analogizer.bin's
+
   // Settings
 
   reg turbo_tap_enable = 0;
@@ -1066,57 +1050,57 @@ MPU_AFP_CORE #(
 		.AC_EN(CORE_OUTPUT[1]),
 
       // Input
-      .p1_button_1(cont1_key_s[4]),
-      .p1_button_2(cont1_key_s[5]),
-      .p1_button_3(cont1_key_s[6]),
-      .p1_button_4(cont1_key_s[7]),
-      .p1_button_5(cont1_key_s[8]),
-      .p1_button_6(cont1_key_s[9]),
-      .p1_button_select(cont1_key_s[14]),
-      .p1_button_start(cont1_key_s[15]),
-      .p1_dpad_up(cont1_key_s[0]),
-      .p1_dpad_down(cont1_key_s[1]),
-      .p1_dpad_left(cont1_key_s[2]),
-      .p1_dpad_right(cont1_key_s[3]),
+      .p1_button_1(key1_s[4]),
+      .p1_button_2(key1_s[5]),
+      .p1_button_3(key1_s[6]),
+      .p1_button_4(key1_s[7]),
+      .p1_button_5(key1_s[8]),
+      .p1_button_6(key1_s[9]),
+      .p1_button_select(key1_s[14]),
+      .p1_button_start(key1_s[15]),
+      .p1_dpad_up(key1_s[0]),
+      .p1_dpad_down(key1_s[1]),
+      .p1_dpad_left(key1_s[2]),
+      .p1_dpad_right(key1_s[3]),
 
-      .p2_button_1(cont2_key_s[4]),
-      .p2_button_2(cont2_key_s[5]),
-      .p2_button_3(cont2_key_s[6]),
-      .p2_button_4(cont2_key_s[7]),
-      .p2_button_5(cont2_key_s[8]),
-      .p2_button_6(cont2_key_s[9]),
-      .p2_button_select(cont2_key_s[14]),
-      .p2_button_start(cont2_key_s[15]),
-      .p2_dpad_up(cont2_key_s[0]),
-      .p2_dpad_down(cont2_key_s[1]),
-      .p2_dpad_left(cont2_key_s[2]),
-      .p2_dpad_right(cont2_key_s[3]),
+      .p2_button_1(key2_s[4]),
+      .p2_button_2(key2_s[5]),
+      .p2_button_3(key2_s[6]),
+      .p2_button_4(key2_s[7]),
+      .p2_button_5(key2_s[8]),
+      .p2_button_6(key2_s[9]),
+      .p2_button_select(key2_s[14]),
+      .p2_button_start(key2_s[15]),
+      .p2_dpad_up(key2_s[0]),
+      .p2_dpad_down(key2_s[1]),
+      .p2_dpad_left(key2_s[2]),
+      .p2_dpad_right(key2_s[3]),
 
-      .p3_button_1(cont3_key_s[4]),
-      .p3_button_2(cont3_key_s[5]),
-      .p3_button_3(cont3_key_s[6]),
-      .p3_button_4(cont3_key_s[7]),
-      .p3_button_5(cont3_key_s[8]),
-      .p3_button_6(cont3_key_s[9]),
-      .p3_button_select(cont3_key_s[14]),
-      .p3_button_start(cont3_key_s[15]),
-      .p3_dpad_up(cont3_key_s[0]),
-      .p3_dpad_down(cont3_key_s[1]),
-      .p3_dpad_left(cont3_key_s[2]),
-      .p3_dpad_right(cont3_key_s[3]),
+      .p3_button_1(key3_s[4]),
+      .p3_button_2(key3_s[5]),
+      .p3_button_3(key3_s[6]),
+      .p3_button_4(key3_s[7]),
+      .p3_button_5(key3_s[8]),
+      .p3_button_6(key3_s[9]),
+      .p3_button_select(key3_s[14]),
+      .p3_button_start(key3_s[15]),
+      .p3_dpad_up(key3_s[0]),
+      .p3_dpad_down(key3_s[1]),
+      .p3_dpad_left(key3_s[2]),
+      .p3_dpad_right(key3_s[3]),
 
-      .p4_button_1(cont4_key_s[4]),
-      .p4_button_2(cont4_key_s[5]),
-      .p4_button_3(cont4_key_s[6]),
-      .p4_button_4(cont4_key_s[7]),
-      .p4_button_5(cont4_key_s[8]),
-      .p4_button_6(cont4_key_s[9]),
-      .p4_button_select(cont4_key_s[14]),
-      .p4_button_start(cont4_key_s[15]),
-      .p4_dpad_up(cont4_key_s[0]),
-      .p4_dpad_down(cont4_key_s[1]),
-      .p4_dpad_left(cont4_key_s[2]),
-      .p4_dpad_right(cont4_key_s[3]),
+      .p4_button_1(key4_s[4]),
+      .p4_button_2(key4_s[5]),
+      .p4_button_3(key4_s[6]),
+      .p4_button_4(key4_s[7]),
+      .p4_button_5(key4_s[8]),
+      .p4_button_6(key4_s[9]),
+      .p4_button_select(key4_s[14]),
+      .p4_button_start(key4_s[15]),
+      .p4_dpad_up(key4_s[0]),
+      .p4_dpad_down(key4_s[1]),
+      .p4_dpad_left(key4_s[2]),
+      .p4_dpad_right(key4_s[3]),
 
       // Settings
       .turbo_tap_enable(turbo_tap_enable_s),
@@ -1262,7 +1246,7 @@ MPU_AFP_CORE #(
 
       .ce_pix(ce_pix),
       .disable_pix(border),
-      .rgb_in(vid_rgb_core),
+      .rgb_in(anz_pocket_off ? 24'd0 : vid_rgb_core),
 
       .vsync_out(video_vs_wire),
       .hsync_out(video_hs_wire),
@@ -1271,6 +1255,55 @@ MPU_AFP_CORE #(
       .rgb_out(video_rgb_wire)
   );
   
+  // The Analogizer: the console's picture as the line buffer gets it (black behind a
+  // save state's load and Skip the Run screen's title, no OSD) out of the cartridge
+  // slot, and SNAC controllers in (above). The Pocket's own screen is black too when
+  // analogizer.bin asks (anz_pocket_off). pocket_analogizer.sv says how it is set.
+
+  pocket_analogizer analogizer (
+      .clk_74a(clk_74a),
+      .bridge_wr(bridge_wr),
+      .bridge_addr(bridge_addr),
+      .bridge_wr_data(bridge_wr_data),
+
+      .clk_sys(clk_sys_42_95),
+      .ce_pix(ce_pix),
+      .hs(video_hs_core),
+      .vs(video_vs_core),
+      .hblank(h_blank),
+      .vblank(v_blank),
+      .r(vid_rgb_core[23:16]),
+      .g(vid_rgb_core[15:8]),
+      .b(vid_rgb_core[7:0]),
+      .pocket_off(anz_pocket_off),
+
+      .cont1_key(cont1_key_s),
+      .cont2_key(cont2_key_s),
+      .cont3_key(cont3_key_s),
+      .cont4_key(cont4_key_s),
+      .key1(key1_s),
+      .key2(key2_s),
+      .key3(key3_s),
+      .key4(key4_s),
+
+      .uart_tx(TXDATA),
+      .uart_rx(RXDATA),
+
+      .cart_tran_bank2(cart_tran_bank2),
+      .cart_tran_bank2_dir(cart_tran_bank2_dir),
+      .cart_tran_bank3(cart_tran_bank3),
+      .cart_tran_bank3_dir(cart_tran_bank3_dir),
+      .cart_tran_bank1(cart_tran_bank1),
+      .cart_tran_bank1_dir(cart_tran_bank1_dir),
+      .cart_tran_bank0(cart_tran_bank0),
+      .cart_tran_bank0_dir(cart_tran_bank0_dir),
+      .cart_tran_pin30(cart_tran_pin30),
+      .cart_tran_pin30_dir(cart_tran_pin30_dir),
+      .cart_pin30_pwroff_reset(cart_pin30_pwroff_reset),
+      .cart_tran_pin31(cart_tran_pin31),
+      .cart_tran_pin31_dir(cart_tran_pin31_dir)
+  );
+
   osd osd (
 	.clk_sys		(clk_sys_42_95),
 	.io_osd		(EXT_BUS[35]),

@@ -60,6 +60,18 @@ bits, and the way in to the first fetch from the CPU's RAM or the system card's 
 reader, `SIM_CARD_ROOT` can be a folder whose `Assets/pcecd/common/<disc>` links to the disc's
 folder in `roms/`.
 
+**The Analogizer** (`tools/anz-test.sh` runs the proofs, `anz.py` checks them): built with
+`SIM_VFLAGS=-DANZ` (in its own `SIM_BUILD`), `sim_top.sv` puts `pocket_analogizer.sv` between
+`main.sv` and the line buffer as `core_top.v` does, the players' controls through it, and PC Engine
+pads at the slot answering CLR and SEL as a pad, a 6-button pad and a multitap do. `--anz F:WORD`
+writes `analogizer.bin`'s word at frame F, `--anz-pad [F:]TYPE` and `--anz-press F:PAD:buttons[:N]`
+are the pads, and `--anz-dump` records the slot's pins at every edge over two frames after each word
+(`anz_vNN_FFFFF.raw`), with the Pocket's frames of the same saved beside them. Every run writes
+`anz_keys.txt` (each frame's controls as the console takes them) and `anz_idle.txt` (the clocks with
+the Analogizer off that found the slot other than as the core had it before, which must be none).
+The module's `scandoubler.v` and `serlatch_gc.v` go in with the same two edits Verilator needs as
+in the other Pocket cores' benches (`tools/sim.sh` says which).
+
 **A chain on its own.** `tools/chain-test.sh` writes random words into the Arcade Card's chain
 (`src/sim/chains/arcade_tb.sv`) and reads them back twice as a save does: every bit has to come
 back. A real file can't show a chain that drops bits, as its read-back drops the same ones.

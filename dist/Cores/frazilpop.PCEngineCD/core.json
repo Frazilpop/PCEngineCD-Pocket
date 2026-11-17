@@ -2,7 +2,7 @@
   "core": {
     "magic": "APF_VER_1",
     "metadata": {
-      "platform_ids": ["pcecd"],
+      "platform_ids": ["pcecd", "analogizer"],
       "shortname": "PCEngineCD",
       "description": "PC Engine CD for the Analogue Pocket with save states",
       "author": "frazilpop",

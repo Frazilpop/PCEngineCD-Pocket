@@ -7,6 +7,8 @@
 //            [--press F:buttons[:N] ...] [--arcade] [--change F:CUE ...] [--reset F ...]
 //            [--mb128] [--save-in FILE] [--save-out FILE] [--press-file FILE] [--skip-run]
 //            [--state-save F FILE] [--state-load FILE [--load-at F] [--resave FILE]]
+//            built with SIM_VFLAGS=-DANZ (tools/anz-test.sh), the Analogizer:
+//            [--anz F:WORD ...] [--anz-pad TYPE] [--anz-press F:PAD:buttons[:N] ...] [--anz-dump]
 //
 // Save states (tools/state-test.sh runs the proofs), through main.sv's window to
 // state_engine.sv, as state_bridge.sv drives it:
@@ -217,7 +219,13 @@ static std::string json_escape(const std::string &s) {
 }
 
 // ---- the end of a run, from wherever it comes: often inside the firmware ----
+#ifdef ANZ
+static void anz_finish();
+#endif
 static void finish() {
+#ifdef ANZ
+  anz_finish();
+#endif
   fclose(frames_txt);
   running = false;
   if (!save_out.empty()) save_write(save_out);
@@ -297,6 +305,132 @@ static void pc_trace_fetch() {
   pc_sync_old = sy;
 }
 
+#ifdef ANZ
+// ---- the Analogizer (sim_top.sv's, built with -DANZ; tools/anz-test.sh) ----
+// --anz F:WORD writes analogizer.bin's word (hex, as the file holds it) at frame F, onto the
+// bridge as the Pocket's big-endian bridge brings it. --anz-pad [F:]TYPE, the pads at the
+// slot (from frame F): 0 none, 1 a 2-button pad, 2 a 6-button pad, 3 a multitap of five
+// 2-button pads. --anz-press F:PAD:buttons[:N] holds
+// buttons on SNAC pad PAD (0 to 4) from frame F for N frames (4): up right down left i ii
+// select run iii iv v vi. --anz-dump: after each word, frames F+2 and F+3 of the slot's pins
+// at every clk_sys edge into anz_vNN_FFFFF.raw (five bytes an edge: bank3, bank2, bank1,
+// anz_misc's two), its .txt saying the mode, and those frames saved as the Pocket's.
+// Out too: anz_keys.txt, a line a frame (the frame, the word in effect, the pad type, each
+// pad's buttons held, key1 to key4 as the console's pads take them, the Pocket's screen
+// black); anz_idle.txt, the clocks the Analogizer was off and how many of them found the
+// slot other than as the core had it before (banks 1 to 3 and pins 30 and 31 inputs, bank0
+// an output of {0, the UART's TX, 0, 0}, pwroff high, the UART's RX pin31's).
+struct AnzWrite { long at; uint32_t word; };
+struct AnzPress { long from, to; int pad; uint32_t bits; };
+static std::vector<AnzWrite> anz_writes, anz_pad_changes;
+static std::vector<AnzPress> anz_presses;
+static int anz_pad_type = 0;
+static bool anz_dump = false;
+static uint32_t anz_word = 0, anz_pending = 0;
+static bool anz_has_pending = false;
+static int anz_settle = 0;
+static uint32_t anz_lfsr = 0xACE1u;
+static FILE *anz_raw = nullptr, *anz_keys_txt = nullptr;
+static long anz_dump_from = -1, anz_dump_written_at = -1;
+static uint64_t anz_off_clocks = 0, anz_off_bad = 0, anz_dump_edges = 0;
+
+static uint32_t anz_button_bits(const std::string &names) {
+  static const char *n[] = {"up", "right", "down", "left", "i", "ii", "select", "run", "iii", "iv", "v", "vi"};
+  uint32_t b = 0;
+  size_t i = 0;
+  while (i <= names.size()) {
+    size_t j = names.find('+', i);
+    if (j == std::string::npos) j = names.size();
+    std::string w = names.substr(i, j - i);
+    bool ok = false;
+    for (int k = 0; k < 12; k++) if (w == n[k]) { b |= 1u << k; ok = true; }
+    if (!ok) { fprintf(stderr, "--anz-press: what is %s?\n", w.c_str()); exit(2); }
+    i = j + 1;
+  }
+  return b;
+}
+
+static void anz_frame() {
+  if (!anz_keys_txt) anz_keys_txt = fopen((out_dir + "/anz_keys.txt").c_str(), "w");
+  // the frame just ended: its keys, as they stood at its end
+  fprintf(anz_keys_txt, "%ld %08x %d", nframe, anz_word, anz_pad_type);
+  uint64_t held = 0;
+  for (auto &p : anz_presses) if (nframe >= p.from && nframe < p.to) held |= (uint64_t)p.bits << (12 * p.pad);
+  uint64_t was = top->anz_held;
+  for (int p = 0; p < 5; p++) fprintf(anz_keys_txt, " %03x", (unsigned)(was >> (12 * p) & 0xFFF));
+  for (int k = 0; k < 4; k++) fprintf(anz_keys_txt, " %04x", (unsigned)(top->anz_keys >> (16 * k) & 0xFFFF));
+  fprintf(anz_keys_txt, " %d\n", top->anz_pocket_off);
+  fflush(anz_keys_txt);
+  for (auto &c : anz_pad_changes) if (c.at == nframe) anz_pad_type = c.word;
+  top->anz_held = held;
+  top->anz_pad_type = anz_pad_type;
+  // the pins: frames F+2 and F+3 after a word
+  if (anz_raw && nframe >= anz_dump_from + 2) {
+    fclose(anz_raw); anz_raw = nullptr;
+  }
+  if (anz_dump && anz_dump_written_at >= 0 && nframe == anz_dump_written_at + 1) {
+    char name[64];
+    snprintf(name, sizeof name, "/anz_v%02u_%05ld", anz_word >> 10 & 15, nframe + 1);
+    anz_raw = fopen((out_dir + name + ".raw").c_str(), "wb");
+    FILE *t = fopen((out_dir + name + ".txt").c_str(), "w");
+    fprintf(t, "video %u word %08x frames %ld %ld div %u\n", anz_word >> 10 & 15, anz_word, nframe + 1, nframe + 2, top->anz_div);
+    fclose(t);
+    anz_dump_from = nframe;
+    anz_dump_written_at = -1;
+  }
+  for (auto &w : anz_writes) if (w.at == nframe) {
+    anz_pending = w.word; anz_has_pending = true;
+    if (anz_dump) {
+      anz_dump_written_at = nframe;
+      if (saves.empty()) saves = ",";
+      saves += std::to_string(nframe + 2) + "," + std::to_string(nframe + 3) + ",";
+    }
+  }
+}
+
+static void anz_pre_edge() {
+  anz_lfsr = (anz_lfsr >> 1) ^ (-(anz_lfsr & 1u) & 0xB400u);
+  top->anz_tx = anz_lfsr & 1;
+  top->anz_wr = 0;
+  if (anz_has_pending) {
+    uint32_t w = anz_pending;
+    top->anz_wr = 1;
+    top->anz_data = (w & 0xFF) << 24 | (w >> 8 & 0xFF) << 16 | (w >> 16 & 0xFF) << 8 | (w >> 24);
+    anz_word = w; anz_has_pending = false;
+    anz_settle = 16;		// the word through its synchroniser and the module's registers
+  }
+}
+
+static void anz_post_edge() {
+  uint16_t m = top->anz_misc;
+  if (anz_raw) {
+    uint32_t b = top->anz_banks;
+    uint8_t rec[5] = {(uint8_t)(b >> 16), (uint8_t)(b >> 8), (uint8_t)b, (uint8_t)(m >> 8), (uint8_t)m};
+    fwrite(rec, 1, 5, anz_raw);
+    anz_dump_edges++;
+  }
+  if (anz_settle > 0) { anz_settle--; return; }
+  if (anz_word & 0x20) return;
+  anz_off_clocks++;
+  bool b3d = m >> 15 & 1, b2d = m >> 14 & 1, b1d = m >> 13 & 1, b0d = m >> 12 & 1, p30d = m >> 11 & 1, p31d = m >> 10 & 1;
+  bool pwr = m >> 9 & 1, rx = m >> 8 & 1, p31 = m >> 2 & 1;
+  unsigned b0 = m >> 4 & 15;
+  unsigned want_b0 = (top->anz_tx & 1) << 2;		// {0, TX, 0, 0}
+  if (b3d || b2d || b1d || !b0d || p30d || p31d || !pwr || rx != p31 || b0 != want_b0) {
+    if (++anz_off_bad <= 4)
+      printf("anz: off, the slot not as before at clock %llu: misc %04x, TX %d\n", (unsigned long long)clocks, m, top->anz_tx);
+  }
+}
+
+static void anz_finish() {
+  FILE *f = fopen((out_dir + "/anz_idle.txt").c_str(), "w");
+  if (f) { fprintf(f, "off %llu clocks, %llu not as before; %llu edges recorded\n", (unsigned long long)anz_off_clocks,
+                   (unsigned long long)anz_off_bad, (unsigned long long)anz_dump_edges); fclose(f); }
+  printf("anz: off %llu clocks, %llu not as before\n", (unsigned long long)anz_off_clocks, (unsigned long long)anz_off_bad);
+  if (anz_raw) fclose(anz_raw);
+}
+#endif
+
 static void frame_done() {
   if (!line.empty()) { lines.push_back(line); line.clear(); }
   if (!running) { lines.clear(); return; }
@@ -347,6 +481,9 @@ static void frame_done() {
   int pad = 0;
   for (auto &p : presses) if (nframe >= p.from && nframe < p.to) pad |= p.bits;
   top->pad = pad;
+#ifdef ANZ
+  anz_frame();
+#endif
 
   if (nframe >= frames || (after_n > 0 && fa && rel_frame >= after_n)) finish();
 }
@@ -592,8 +729,14 @@ static void pocket_74a() {
 void sim_tick(uint32_t n) {
   for (uint32_t i = 0; i < n; i++) {
     if (pb) { pre_status = top->ss_status; pre_do = top->ss_do; }
+#ifdef ANZ
+    anz_pre_edge();
+#endif
     top->clk_sys = 1; top->clk_mem = 1; top->eval();
     clocks++;
+#ifdef ANZ
+    anz_post_edge();
+#endif
     if (pc_trace && fa) pc_trace_fetch();
     if (pb) pocket_sys_edge();
     else if (running) ss_step();
@@ -735,6 +878,27 @@ int main(int argc, char **argv) {
     else if (a == "--after") after_n = atol(next().c_str());
     else if (a == "--resave") st_resave = next();
     else if (a == "--pocket") { if (!pb) pb = new Vpocket; }
+#ifdef ANZ
+    else if (a == "--anz") {
+      std::string v = next(); size_t c = v.find(':');
+      if (c == std::string::npos) { fprintf(stderr, "--anz F:WORD\n"); return 2; }
+      anz_writes.push_back({atol(v.c_str()), (uint32_t)strtoul(v.c_str() + c + 1, nullptr, 16)});
+    }
+    else if (a == "--anz-pad") {
+      std::string v = next(); size_t c = v.find(':');
+      if (c == std::string::npos) anz_pad_type = atoi(v.c_str());
+      else anz_pad_changes.push_back({atol(v.c_str()), (uint32_t)atoi(v.c_str() + c + 1)});
+    }
+    else if (a == "--anz-dump") anz_dump = true;
+    else if (a == "--anz-press") {
+      std::string v = next();
+      size_t c1 = v.find(':'), c2 = v.find(':', c1 + 1), c3 = v.find(':', c2 + 1);
+      if (c1 == std::string::npos || c2 == std::string::npos) { fprintf(stderr, "--anz-press F:PAD:buttons[:N]\n"); return 2; }
+      long f = atol(v.c_str());
+      long n = c3 == std::string::npos ? 4 : atol(v.c_str() + c3 + 1);
+      anz_presses.push_back({f, f + n, atoi(v.c_str() + c1 + 1), anz_button_bits(v.substr(c2 + 1, c3 == std::string::npos ? std::string::npos : c3 - c2 - 1))});
+    }
+#endif
     else { fprintf(stderr, "what is %s?\n", a.c_str()); return 2; }
   }
   if (card_path.empty()) { fprintf(stderr, "--card FILE: a system card, or tools/testcard.py's\n"); return 2; }

@@ -85,6 +85,22 @@ module sim_top (
 	output logic        dbg_cpu_sync,
 	output logic [11:0] dbg_cd,		// SIM_PCTRACE: the CD's interrupt and its sources
 	output logic  [7:0] dbg_cpu_sp
+`ifdef ANZ
+	// the Analogizer (SIM_VFLAGS=-DANZ, tools/anz-test.sh): pocket_analogizer.sv as core_top.v
+	// joins it, with PC Engine pads at the slot (below)
+	, input  logic        anz_wr,		// analogizer.bin's word written onto the bridge (clk_sys here)
+	input  logic [31:0] anz_data,
+	input  logic  [1:0] anz_pad_type,	// 0 none, 1 a 2-button pad, 2 a 6-button pad, 3 a multitap of five
+	input  logic [59:0] anz_held,		// each pad's buttons held, 12 a pad from bit 0: up, right, down,
+						//   left, I, II, Select, Run, III, IV, V, VI
+	input  logic        anz_tx,		// the MPU's UART out, stood in for
+	output logic [23:0] anz_banks,		// {bank3, bank2, bank1}
+	output logic [15:0] anz_misc,		// {bank3, 2, 1, 0 dirs, pin30 dir, pin31 dir, pwroff, rx,
+						//   bank0[7:4], pin30, pin31, 2'b0}
+	output logic [63:0] anz_keys,		// {key4, key3, key2, key1}, as the console's pads take them
+	output logic        anz_pocket_off,
+	output logic  [3:0] anz_div		// the scandoubler's divider
+`endif
 );
 	wire [35:0] ext_bus;
 	assign ext_bus[31:16] = io_din;
@@ -94,8 +110,17 @@ module sim_top (
 	assign io_dout = ext_bus[15:0];
 	assign io_wait = ext_bus[32];
 
-	wire ce_pix, hs, vs, border;
+	wire ce_pix, hs, vs, border, hbl, vbl;
 	wire [7:0] r, g, b;
+	// the players' controls in the Pocket's order (up, down, left, right, A, B, X, Y, L1, R1,
+	// L2, R2, L3, R3, select, start): main.cpp's pad as player 1's, the others' none
+	wire [15:0] cont1 = {pad[7], pad[6], 8'd0, 2'd0, pad[5], pad[4], pad[3], pad[2], pad[1], pad[0]};
+	wire [15:0] k1, k2, k3, k4;
+	wire        pocket_off;
+`ifndef ANZ
+	assign {k4, k3, k2, k1} = {48'd0, cont1};
+	assign pocket_off = 1'b0;
+`endif
 	wire [15:0] dq;
 
 	wire [21:16] cram_a;
@@ -126,18 +151,18 @@ module sim_top (
 		.core_reset(core_reset),
 		.pll_core_locked(1'b1),
 
-		.p1_button_1(pad[4]), .p1_button_2(pad[5]), .p1_button_3(1'b0), .p1_button_4(1'b0),
-		.p1_button_5(1'b0), .p1_button_6(1'b0), .p1_button_select(pad[6]), .p1_button_start(pad[7]),
-		.p1_dpad_up(pad[0]), .p1_dpad_down(pad[1]), .p1_dpad_left(pad[2]), .p1_dpad_right(pad[3]),
-		.p2_button_1(1'b0), .p2_button_2(1'b0), .p2_button_3(1'b0), .p2_button_4(1'b0),
-		.p2_button_5(1'b0), .p2_button_6(1'b0), .p2_button_select(1'b0), .p2_button_start(1'b0),
-		.p2_dpad_up(1'b0), .p2_dpad_down(1'b0), .p2_dpad_left(1'b0), .p2_dpad_right(1'b0),
-		.p3_button_1(1'b0), .p3_button_2(1'b0), .p3_button_3(1'b0), .p3_button_4(1'b0),
-		.p3_button_5(1'b0), .p3_button_6(1'b0), .p3_button_select(1'b0), .p3_button_start(1'b0),
-		.p3_dpad_up(1'b0), .p3_dpad_down(1'b0), .p3_dpad_left(1'b0), .p3_dpad_right(1'b0),
-		.p4_button_1(1'b0), .p4_button_2(1'b0), .p4_button_3(1'b0), .p4_button_4(1'b0),
-		.p4_button_5(1'b0), .p4_button_6(1'b0), .p4_button_select(1'b0), .p4_button_start(1'b0),
-		.p4_dpad_up(1'b0), .p4_dpad_down(1'b0), .p4_dpad_left(1'b0), .p4_dpad_right(1'b0),
+		.p1_button_1(k1[4]), .p1_button_2(k1[5]), .p1_button_3(k1[6]), .p1_button_4(k1[7]),
+		.p1_button_5(k1[8]), .p1_button_6(k1[9]), .p1_button_select(k1[14]), .p1_button_start(k1[15]),
+		.p1_dpad_up(k1[0]), .p1_dpad_down(k1[1]), .p1_dpad_left(k1[2]), .p1_dpad_right(k1[3]),
+		.p2_button_1(k2[4]), .p2_button_2(k2[5]), .p2_button_3(k2[6]), .p2_button_4(k2[7]),
+		.p2_button_5(k2[8]), .p2_button_6(k2[9]), .p2_button_select(k2[14]), .p2_button_start(k2[15]),
+		.p2_dpad_up(k2[0]), .p2_dpad_down(k2[1]), .p2_dpad_left(k2[2]), .p2_dpad_right(k2[3]),
+		.p3_button_1(k3[4]), .p3_button_2(k3[5]), .p3_button_3(k3[6]), .p3_button_4(k3[7]),
+		.p3_button_5(k3[8]), .p3_button_6(k3[9]), .p3_button_select(k3[14]), .p3_button_start(k3[15]),
+		.p3_dpad_up(k3[0]), .p3_dpad_down(k3[1]), .p3_dpad_left(k3[2]), .p3_dpad_right(k3[3]),
+		.p4_button_1(k4[4]), .p4_button_2(k4[5]), .p4_button_3(k4[6]), .p4_button_4(k4[7]),
+		.p4_button_5(k4[8]), .p4_button_6(k4[9]), .p4_button_select(k4[14]), .p4_button_start(k4[15]),
+		.p4_dpad_up(k4[0]), .p4_dpad_down(k4[1]), .p4_dpad_left(k4[2]), .p4_dpad_right(k4[3]),
 
 		.sgx(1'b0),
 		.AC_EN(ac_en),
@@ -183,8 +208,8 @@ module sim_top (
 		.ce_pix(ce_pix),
 		.hsync(hs),
 		.vsync(vs),
-		.hblank(),
-		.vblank(),
+		.hblank(hbl),
+		.vblank(vbl),
 		.video_r(r),
 		.video_g(g),
 		.video_b(b),
@@ -259,13 +284,64 @@ module sim_top (
 	assign mb128_addr  = pce.MB128.r_MB128_Addr;
 	assign mb128_bits  = pce.MB128.r_MB128_Bits;
 
+`ifdef ANZ
+	// ---- the Analogizer, as core_top.v has it (the bridge's clock is clk_sys here) ----
+	wire [7:0] cb3, cb2, cb1;
+	wire [7:4] cb0;
+	wire       cp30, cp31;
+	wire       cb3d, cb2d, cb1d, cb0d, cp30d, cp31d, cpwr, rx;
+	pocket_analogizer analogizer (
+		.clk_74a(clk_sys), .bridge_wr(anz_wr), .bridge_addr(anz_wr ? 32'hF7000000 : 32'h0), .bridge_wr_data(anz_data),
+		.clk_sys(clk_sys), .ce_pix(ce_pix), .hs(hs), .vs(vs), .hblank(hbl), .vblank(vbl),
+		.r(r), .g(g), .b(b), .pocket_off(pocket_off),
+		.cont1_key(cont1), .cont2_key(16'd0), .cont3_key(16'd0), .cont4_key(16'd0),
+		.key1(k1), .key2(k2), .key3(k3), .key4(k4),
+		.uart_tx(anz_tx), .uart_rx(rx),
+		.cart_tran_bank2(cb2), .cart_tran_bank2_dir(cb2d), .cart_tran_bank3(cb3), .cart_tran_bank3_dir(cb3d),
+		.cart_tran_bank1(cb1), .cart_tran_bank1_dir(cb1d), .cart_tran_bank0(cb0), .cart_tran_bank0_dir(cb0d),
+		.cart_tran_pin30(cp30), .cart_tran_pin30_dir(cp30d), .cart_pin30_pwroff_reset(cpwr),
+		.cart_tran_pin31(cp31), .cart_tran_pin31_dir(cp31d)
+	);
+	assign anz_banks = {cb3, cb2, cb1};
+	assign anz_misc = {cb3d, cb2d, cb1d, cb0d, cp30d, cp31d, cpwr, rx, cb0, cp30, cp31, 2'b0};
+	assign anz_keys = {k4, k3, k2, k1};
+	assign anz_pocket_off = pocket_off;
+	assign anz_div = analogizer.sd_div;
+
+	// PC Engine pads at the slot, answering CLR (bank1[6]) and SEL (bank1[7]) on D0 bank0[7],
+	// D1 pin31, D2 bank0[4] and D3 bank0[5] (openFPGA_Pocket_Analogizer_SNAC.sv's
+	// Configuration A): SEL high the d-pad (up, right, down, left), low the buttons (I, II,
+	// Select, Run), a held button low, CLR high all low. A 6-button pad changes set on each
+	// CLR, its second set 0000 with SEL high and III to VI with SEL low. A multitap's port
+	// steps on SEL's rise and goes back to the first on CLR, and it passes the port's pad on
+	// with CLR high too (the module's multitap reader takes port 1's d-pad then, as it does
+	// on the hardware it was tried on). No pad: the lines float high.
+	logic       clr_d = 0, sel_d = 0, set6 = 0;
+	logic [2:0] port = 0;
+	always @(posedge clk_sys) begin
+		clr_d <= cb1[6]; sel_d <= cb1[7];
+		if (cb1[6] && !clr_d) set6 <= ~set6;
+		if (cb1[6]) port <= 0;
+		else if (cb1[7] && !sel_d && port != 3'd7) port <= port + 3'd1;
+	end
+	wire [11:0] held = anz_pad_type == 2'd3 ? (port < 3'd5 ? anz_held[port * 12 +: 12] : 12'd0) : anz_held[11:0];
+	wire        ext = anz_pad_type == 2'd2 && set6;
+	wire [3:0]  d = anz_pad_type == 2'd0 ? 4'hF :
+	                (cb1[6] && anz_pad_type != 2'd3) ? 4'h0 :
+	                (anz_pad_type == 2'd3 && port >= 3'd5) ? 4'h0 :
+	                ext ? (cb1[7] ? 4'h0 : ~held[11:8]) :
+	                (cb1[7] ? ~held[3:0] : ~held[7:4]);
+	assign cb0  = cb0d  ? 4'bzzzz : {d[0], 1'b1, d[3], d[2]};
+	assign cp31 = cp31d ? 1'bz    : d[1];
+`endif
+
 	linebuffer linebuffer (
 		.clk_vid(clk_sys),
 		.vsync_in(vs),
 		.hsync_in(hs),
 		.ce_pix(ce_pix),
 		.disable_pix(border),
-		.rgb_in({r, g, b}),
+		.rgb_in(pocket_off ? 24'd0 : {r, g, b}),
 		.vsync_out(video_vs),
 		.hsync_out(video_hs),
 		.slot(),
