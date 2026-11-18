@@ -636,9 +636,16 @@ core_bridge_cmd icb (
   wire ioctl_wr_c, ioctl_wr_h;
   wire [23:0] ioctl_addr_c, ioctl_addr_h;
   wire [15:0] ioctl_dout_c, ioctl_dout_h;
+  // The data must stay the last word's after its strobe, as one loader's does: the SDRAM
+  // (rtl/sdram.sv) takes it at its next idle state, which can come after the strobe has
+  // fallen. So the choice is the loader that last wrote (ioctl_sel_h, below the clocks),
+  // not the strobe: chosen by the strobe, every HuCard word could be written as the system
+  // card loader's last, and a HuCard showed a blank screen on the Pocket.
+  reg  ioctl_sel_h = 0;
+  wire ioctl_use_h = ioctl_wr_h | (ioctl_sel_h & ~ioctl_wr_c);
   assign ioctl_wr   = ioctl_wr_c | ioctl_wr_h;
-  assign ioctl_addr = ioctl_wr_h ? ioctl_addr_h : ioctl_addr_c;
-  assign ioctl_dout = ioctl_wr_h ? ioctl_dout_h : ioctl_dout_c;
+  assign ioctl_addr = ioctl_use_h ? ioctl_addr_h : ioctl_addr_c;
+  assign ioctl_dout = ioctl_use_h ? ioctl_dout_h : ioctl_dout_c;
 
 always @(posedge clk_74a) begin
   ioctl_download 	<= dataslot_requestwrite_id == 1 	|| dataslot_requestread_id == 1;
@@ -1391,6 +1398,12 @@ MPU_AFP_CORE #(
 
   wire clk_mem_85_91;
   wire clk_sys_42_95;
+
+  // which loader wrote last, in the loaders' own clock (ioctl_dout above)
+  always @(posedge clk_mem_85_91) begin
+    if (ioctl_wr_h) ioctl_sel_h <= 1;
+    else if (ioctl_wr_c) ioctl_sel_h <= 0;
+  end
   wire clk_vid_42_95_90deg;
 
   wire pll_core_locked;
