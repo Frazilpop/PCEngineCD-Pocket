@@ -2,15 +2,16 @@
 
 # PC Engine CD for Analogue Pocket
 
-A PC Engine CD / TurboGrafx-CD core with save states and more.
+A PC Engine CD / TurboGrafx-CD core with save states and more
 
 This core was originally forked from [Mazamars312's openfpga-pcengine-cd](https://github.com/Mazamars312/openfpga-pcengine-cd), which in turn is built on top of [agg23's PC Engine / TurboGrafx-16 core](https://github.com/agg23/openfpga-pcengine). This version uses the latest MiSTer chips, fixes a whole load of bugs, and adds in some new features. Here's what you can expect:
 
 - **High compatibility.** CUEs with PREGAP lines, CUEs over 16K and CUEs that point into another folder all now load. Fan translations, including the English patched version of Castlevania: Rondo of Blood, can be played on this core.
 - **2K saves.** The PC Engine CD's built-in save system works reliably for saving and loading games. The Memory Base 128 is also supported.
 - **Memories and Sleep.** Pause and resume anywhere with save states and sleep/resume.
+- **HuCards.** Play regular PC Engine / TurboGrafx-16 games too, with Memories and Sleep.
 - **Analogizer.** Play on a CRT or TV.
-- **Some more stuff too** including support for multi-disc games, CD+G, and the option to skip the system card title.
+- **Some more stuff** including support for multi-disc games, CD+G, and the option to skip the system card title.
 
 ## Installation
 
@@ -19,11 +20,22 @@ You will need an Analogue Pocket on firmware 2.3 or later. No game data or syste
 1. Download the zip from the latest release on GitHub and merge `Cores`, `Platforms` and `Assets` into the folders already on your Analogue Pocket's SD card.
 2. Copy your system card into `Assets/pcecd/common/`: `bios_3_0_jap.pce` by default, with `bios_3_0_usa.pce`, `bios_2_0_usa.pce`, `bios_2_0_jap.pce` or `bios_1_0_jap.pce` as other choices.
 3. Copy your discs into the same folder as `.cue` and `.bin` files.
-4. On the Pocket: openFPGA → PC Engine CD, then pick a disc's `.cue`.
+4. On the Pocket: openFPGA → PC Engine CD, then pick a disc's `.cue` (or a HuCard's `.pce`, see below).
 
 Saves are stored in `Saves/pcecd`.
 
 A CD+G disc needs its subcode beside its CUE, in a `.sub` of the CUE's name (the CloneCD form, the same as the MiSTer core reads), or a `TRACK nn CDG` in the CUE (2448 bytes a sector). Its pictures are on the GRAPHICS screen of the system card's CD player, on system card 2.0 or later.
+
+## HuCards
+
+The core plays HuCards as well as discs. Copy them as `.pce` files into `Assets/pcecd/common/`, and pick one from the same list as the discs. The system card still needs to be in place, although a HuCard boots straight into its game with no CD unit attached.
+
+- Memories and Sleep work for HuCards as they do for discs.
+- A HuCard that saves keeps its save in `Saves/pcecd`, under the game name.
+- Cards up to 2.5 MB load, with or without a 512-byte header, and Street Fighter II' and Populous get their extra banks and RAM as on MiSTer.
+- Skip the Run screen and Another disc don't apply to a HuCard.
+
+The system cards are `.pce` files too, so they show up in the list. Picking one just shows its title screen.
 
 ## Memories and Sleep
 
