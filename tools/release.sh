@@ -45,6 +45,19 @@ print(m["author"], m["shortname"], m["version"], m["date_release"])' "$JSON")
 DAY=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%d)
 [ "$DATE" = "$DAY" ] || die "core.json's date_release is $DATE, the commit's day $DAY"
 
+# Analogue's limits on what the Pocket and the library show: 31 characters for
+# core.json's shortname, author and version and a platform's name, 63 for the
+# description (1.2.0 first went up with a description of 65)
+long=$(python3 -I -c '
+import json, sys, glob
+m = json.load(open(sys.argv[1]))["core"]["metadata"]
+for k, n in (("shortname", 31), ("author", 31), ("version", 31), ("description", 63)):
+    if len(m.get(k, "")) > n: print(f"core.json {k} is {len(m[k])} characters, over {n}")
+for f in sorted(glob.glob("dist/Platforms/*.json")):
+    name = json.load(open(f))["platform"]["name"]
+    if len(name) > 31: print(f"{f} name is {len(name)} characters, over 31")' "$JSON")
+[ -z "$long" ] || die "$long"
+
 mkdir -p "$OUT"
 STAGE=$(mktemp -d "${TMPDIR:-/tmp}/pcecd-release.XXXXXX")
 CHECK=$(mktemp -d "${TMPDIR:-/tmp}/pcecd-release-check.XXXXXX")
