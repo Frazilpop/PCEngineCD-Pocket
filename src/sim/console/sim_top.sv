@@ -118,7 +118,7 @@ module sim_top (
 	wire [7:0] r, g, b;
 	// the players' controls in the Pocket's order (up, down, left, right, A, B, X, Y, L1, R1,
 	// L2, R2, L3, R3, select, start): main.cpp's pad as player 1's, the others' none
-	wire [15:0] cont1 = {pad[7], pad[6], 8'd0, 2'd0, pad[5], pad[4], pad[3], pad[2], pad[1], pad[0]};
+	wire [15:0] cont1 = {pad[7], pad[6], 8'd0, pad[5], pad[4], pad[3], pad[2], pad[1], pad[0]};
 	wire [15:0] k1, k2, k3, k4;
 	wire        pocket_off;
 `ifndef ANZ

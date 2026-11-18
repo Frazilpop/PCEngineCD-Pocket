@@ -9,6 +9,8 @@
 #                                                                   cdda.f32 (44.1 kHz stereo), psg.f32 (3.58 MHz averaged by 75,
 #                                                                   47727 Hz stereo), adpcm.f32 (the MSM5205's 96 kHz, mono),
 #                                                                   before MAME's mix; for src/sim/console/compare_sound.py
+#   ... --tg16                                                      as a TurboGrafx-16 (MAME's tg16): a US HuCard, which on a
+#                                                                   PC Engine locks itself out with a blank screen
 #   ... --arcade                                                    as an Arcade Card Pro: the card has to be Japan's 3.0,
 #                                                                   which MAME's software list names by its checksum
 # MAME_OUT: somewhere else. MAME's frames are its own count from power-on; the sim's first
@@ -16,13 +18,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 command -v mame >/dev/null || { echo "MAME is not on this Mac: brew install mame (the page's Install what's missing has it)"; exit 1; }
-CARD=""; DISC=""; FRAMES=(); PRESSES=(); ARCADE=""; WAV=""; SRCDIR=""
+CARD=""; DISC=""; FRAMES=(); PRESSES=(); ARCADE=""; WAV=""; SRCDIR=""; MACHINE=pce
 while [ $# -gt 0 ]; do
   case "$1" in
     --card) CARD=$2; shift 2 ;;
     --disc) DISC=$2; shift 2 ;;
     --press) PRESSES+=("$2"); shift 2 ;;
     --arcade) ARCADE=1; shift ;;
+    --tg16) MACHINE=tg16; shift ;;
     --wav) WAV=$2; shift 2 ;;
     --sources) SRCDIR=$2; shift 2 ;;
     *) FRAMES+=("$1"); shift ;;
@@ -104,7 +107,7 @@ emu.register_sound_update(function(t)
 end)
 LUA
 fi
-ARGS=(pce -cart "$CARD")
+ARGS=("$MACHINE" -cart "$CARD")
 if [ -n "$ARCADE" ]; then
   mkdir -p "$TMP/pce/acardpro"
   cp "$CARD" "$TMP/pce/acardpro/[cd] super cd-rom system (japan) (v3.0).pce"
