@@ -353,6 +353,13 @@ static uint32_t env_or(const char *name, uint32_t dflt)
 	return v ? (uint32_t)atoi(v) : dflt;
 }
 
+bool drive_hucard_detect()
+{
+	bool h = pcecd_hucard_detect();
+	drive_log(h ? "slot 100 is a HuCard: no disc" : "slot 100 is a CUE");
+	return h;
+}
+
 void drive_open(const char *card, const char *cue, const char *out_dir)
 {
 	seek_us = env_or("SIM_CARD_SEEK_US", seek_us);

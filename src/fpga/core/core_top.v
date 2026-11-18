@@ -623,14 +623,26 @@ core_bridge_cmd icb (
   ******************************************************/
 
   reg ioctl_download = 0;
+  // slot 100, the game: a CUE or a HuCard, loaded by the Pocket at 0x30000000 before the
+  // core starts (data.json), into the SDRAM beside the system card (main.sv). The request's
+  // id stays until the next, so the load ends at the next request or at all-complete.
+  reg hucard_download = 0;
   reg save_download = 0;
   reg is_sgx = 0;
   wire ioctl_wr;
   wire [23:0] ioctl_addr;
   wire [15:0] ioctl_dout;
+  // the two loaders' words, the system card's at 0x1 and slot 100's at 0x3: one is ever loading
+  wire ioctl_wr_c, ioctl_wr_h;
+  wire [23:0] ioctl_addr_c, ioctl_addr_h;
+  wire [15:0] ioctl_dout_c, ioctl_dout_h;
+  assign ioctl_wr   = ioctl_wr_c | ioctl_wr_h;
+  assign ioctl_addr = ioctl_wr_h ? ioctl_addr_h : ioctl_addr_c;
+  assign ioctl_dout = ioctl_wr_h ? ioctl_dout_h : ioctl_dout_c;
 
 always @(posedge clk_74a) begin
   ioctl_download 	<= dataslot_requestwrite_id == 1 	|| dataslot_requestread_id == 1;
+  hucard_download <= dataslot_requestwrite_id == 100 && !dataslot_allcomplete;
   save_download 	<= dataslot_requestwrite_id == 2 	|| dataslot_requestread_id == 2;
 end
 
@@ -747,6 +759,8 @@ MPU_AFP_CORE #(
 	 );
 
   wire ioctl_download_s;
+  wire hucard_download_s;
+  synch_3 hucard_download_sync (hucard_download, hucard_download_s, clk_mem_85_91);
   wire save_download_s;
   wire is_sgx_s;
 
@@ -775,9 +789,30 @@ MPU_AFP_CORE #(
       .bridge_addr(bridge_addr),
       .bridge_wr_data(bridge_wr_data),
 
-      .write_en  (ioctl_wr),
-      .write_addr(ioctl_addr),
-      .write_data(ioctl_dout)
+      .write_en  (ioctl_wr_c),
+      .write_addr(ioctl_addr_c),
+      .write_data(ioctl_dout_c)
+  );
+
+  data_loader #(
+      .ADDRESS_MASK_UPPER_4(4'h3),
+      .ADDRESS_SIZE(24),
+      .OUTPUT_WORD_SIZE(2),
+
+      .WRITE_MEM_CLOCK_DELAY(32),
+      .WRITE_MEM_EN_CYCLE_LENGTH(16)
+  ) hucard_loader (
+      .clk_74a(clk_74a),
+      .clk_memory(clk_mem_85_91),
+
+      .bridge_wr(bridge_wr),
+      .bridge_endian_little(bridge_endian_little),
+      .bridge_addr(bridge_addr),
+      .bridge_wr_data(bridge_wr_data),
+
+      .write_en  (ioctl_wr_h),
+      .write_addr(ioctl_addr_h),
+      .write_data(ioctl_dout_h)
   );
 
   data_loader #(
@@ -949,7 +984,10 @@ MPU_AFP_CORE #(
   wire  [1:0] ss_status;
   wire [20:0] ss_addr, ss_words;
   wire [15:0] ss_do, ss_di;
-  wire [31:0] ss_card_size, ss_card_sum;
+  wire [31:0] ss_card_size, ss_card_sum, ss_hu_size, ss_hu_sum;
+  // the firmware's word that slot 100's file is a HuCard, which the console then reads
+  wire hucard_s;
+  synch_3 hucard_sync (CORE_OUTPUT[5], hucard_s, clk_sys_42_95);
 
   // The Arcade System and MB128 settings as the Pocket writes them to 0xF0000004 (the MPU's
   // mpu_reg_1, bits 1 and 3), for the save states: CORE_OUTPUT has them only once the firmware
@@ -1006,6 +1044,9 @@ MPU_AFP_CORE #(
       .savestate_load_err(savestate_load_err),
       .card_size(ss_card_size),
       .card_sum(ss_card_sum),
+      .hu_size(ss_hu_size),
+      .hu_sum(ss_hu_sum),
+      .hucard(hucard_s),
       .mb128_on(ss_set_mb128),
       .ac_on(ss_set_ac),
       .ss_words(ss_words),
@@ -1124,6 +1165,8 @@ MPU_AFP_CORE #(
       .ioctl_addr(ioctl_addr),
       .ioctl_dout(ioctl_dout),
       .cart_download(ioctl_download_s),
+      .hucard_download(hucard_download_s),
+      .hucard(hucard_s),
 
       // Data out
       .sd_wr(sd_wr),
@@ -1203,6 +1246,8 @@ MPU_AFP_CORE #(
 		.SS_DI						(ss_di),
 		.SS_CARD_SIZE				(ss_card_size),
 		.SS_CARD_SUM				(ss_card_sum),
+		.SS_HU_SIZE					(ss_hu_size),
+		.SS_HU_SUM					(ss_hu_sum),
 		.SS_WORDS					(ss_words),
 		.SS_DRV_PARK				(ss_drv_park),
 		.SS_DRV_IN					(ss_drv_in),

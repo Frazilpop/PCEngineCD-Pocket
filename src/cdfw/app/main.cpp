@@ -79,6 +79,8 @@ void mainloop()
 	mainprintf("Make in 2022\r\n");
 	mainprintf("I hate this debugger LOL\r\n");
 	riscusleep(2000);
+	// A HuCard in slot 100 is read by the console from its first clock (pcecd.cpp)
+	core_set_hucard(pcecd_hucard_detect());
 	core_reset(1); // Turns off all the resets via the HPS bus
   	// core_update_dataslots();
 	core_input_setup();

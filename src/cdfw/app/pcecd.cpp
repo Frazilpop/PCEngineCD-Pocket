@@ -14,6 +14,33 @@
 static int need_reset=0;
 static uint8_t has_command = 0;
 bool bios_us = false;
+bool hucard = false;
+
+// A HuCard in slot 100, which takes a .pce as well as a CUE. The Pocket loads slot 100
+// beside the system card whatever its file (core_top.v, main.sv), and the console reads it
+// once main.cpp has said so in CORE_OUTPUT, before the console's reset is let go. The drive
+// then has no disc and loads none, and the CD is never mounted, as on MiSTer with a HuCard
+// loaded (cd_en 0: the console sees no CD unit). With no disc the region, the CD's
+// signature alone, is never read; it stays Core Settings', and "ALL DATA" isn't looked for.
+// Another disc is not taken: there is no system card in the console to play it.
+bool pcecd_hucard_detect()
+{
+	static dataslot_type a;
+	bool error_enabled = file_error_enabled;
+	int error_code = file_error_code;
+	a.aft_dataslot = CUE_SLOT_FIRST;
+	hucard = false;
+	if (!GetFileNameDataSlot(&a)) {
+		const char *name = a.aft_filename;
+		size_t n = strlen(name);
+		hucard = (n > 4) && (name[n - 4] == '.') && ((name[n - 3] | 0x20) == 'p')
+		         && ((name[n - 2] | 0x20) == 'c') && ((name[n - 1] | 0x20) == 'e');
+	}
+	file_error_enabled = error_enabled;	// a CUE's own load says what is wrong with it
+	file_error_code = error_code;
+	drive_trace.hucard = hucard;
+	return hucard;
+}
 
 uint32_t poll_timer = 0;
 static uint8_t last_req = 0;	// the chips' count of events, as last seen (hps_ext.v's cd_req)
@@ -57,6 +84,7 @@ static uint32_t tray_timer;
 
 void pcecd_change_disc()
 {
+	if (hucard) return;
 	tray = TRAY_OPENING;
 	tray_timer = RISCGetTimer2(TRAY_DRAIN_MS);
 }
@@ -159,7 +187,7 @@ static bool block_in(const drive_block_t *b)
 {
 	if ((b->magic != BLOCK_MAGIC) || (b->version != BLOCK_VERSION)) return false;
 	while (!dataslot_ready());			// a read the drive had under way when it parked
-	if (!cue.loaded) first_load();		// a wake's state can come before the console's first reset
+	if (!cue.loaded && !hucard) first_load();	// a wake's state can come before the console's first reset
 	bool other = b->disc_id && (!cue.loaded || (cue.DiscId() != b->disc_id));
 	if (other && (!b->cue_path[0] || !reopen(b->cue_path) || (cue.DiscId() != b->disc_id))) return false;
 	// the track file the cache was reading, open again in its slot if another is
@@ -254,7 +282,7 @@ void pcecd_poll()
 		// first one loads the disc, as nothing else does; after that the disc stays,
 		// as on MiSTer. A game resetting the drive used to throw the TOC away and read
 		// the whole CUE again, every file of it, with the game waiting on the drive.
-		if (!cue.loaded) {
+		if (!cue.loaded && !hucard) {
 			first_load();
 		}
 		else {

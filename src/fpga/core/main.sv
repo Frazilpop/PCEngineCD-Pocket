@@ -83,6 +83,10 @@ module pce (
     input wire [23:0] ioctl_addr,
     input wire [15:0] ioctl_dout,
     input wire        cart_download,
+    // HuCards: the Pocket's load of slot 100, whatever its file (core_top.v), and the
+    // firmware's word that the file is a HuCard (CORE_OUTPUT[5]), which the console then reads
+    input wire        hucard_download,
+    input wire        hucard,
 
     // Data out
     input wire sd_wr,
@@ -171,6 +175,8 @@ module pce (
     // and the drive's part (the MPU's CORE_INPUT and CORE_OUTPUT bits)
     output wire [31:0] SS_CARD_SIZE,
     output wire [31:0] SS_CARD_SUM,
+    output wire [31:0] SS_HU_SIZE,
+    output wire [31:0] SS_HU_SUM,
     output wire [20:0] SS_WORDS,
     output wire        SS_DRV_PARK,
     output wire        SS_DRV_IN,
@@ -217,6 +223,7 @@ module pce (
   wire        ss_frd, ss_fwr, ss_fclr;
   wire [31:0] ss_fd, ss_fq;
   wire [12:0] ss_fcnt;
+  wire  [1:0] ss_rombank;
   wire [15:0] ss_ad_a;
   wire  [7:0] ss_ad_d, ss_ad_q;
   wire        ss_ad_we, ss_ad_rd;
@@ -276,8 +283,8 @@ module pce (
   wire [15:0] 	cdda_sl, cdda_sr, adpcm_s, psg_sl, psg_sr;
 
   pce_top #(LITE) pce_top (
-		.RESET					(reset | cart_download),
-		.COLD_RESET				(cart_download),
+		.RESET					(reset | rom_download),
+		.COLD_RESET				(rom_download),
 
 		.CLK						(clk_sys_42_95),
 
@@ -285,8 +292,8 @@ module pce (
 		.ROM_RDY					(rom_sdrdy),
 		.ROM_A					(rom_rdaddr),
 		.ROM_DO					(rom_sdata),
-		.ROM_SZ					(romwr_a[23:12]),
-		.ROM_POP					(populous[romwr_a[9]]),
+		.ROM_SZ					(rom_len[23:12]),
+		.ROM_POP					(rom_pop[rom_len[9]]),
 		.ROM_CLKEN				(ce_rom),
 
 		.BRM_A 					(bram_addr),
@@ -398,7 +405,10 @@ module pce (
 		.SS_FCLR					(ss_fclr),
 		.SS_FD					(ss_fd),
 		.SS_FQ					(ss_fq),
-		.SS_FCNT					(ss_fcnt)
+		.SS_FCNT					(ss_fcnt),
+		.SS_RBQ					(ss_rombank),
+		.SS_RBD					(ss_rest_n[95:94]),
+		.SS_RBWE					(ss_rest_we)
   );
 
   ////////////////////////////  SAVE STATES  ///////////////////////////////////
@@ -493,7 +503,7 @@ module pce (
 
       .mb128_on(SS_MB128_ON),
       .ac_on(SS_AC_ON),
-      .ac_write(~cart_download & cd_ram_wr & ce_rom),
+      .ac_write(~rom_download & cd_ram_wr & ce_rom),
       .ac_write_a(cd_ram_a),
 
       .bk(ss_bk),
@@ -503,11 +513,15 @@ module pce (
       .bk_q(bk_int_dout),
 
       .cart_download(cart_download),
+      .hucard_download(hucard_download),
+      .hucard(hucard),
       .ioctl_wr(ioctl_wr),
       .ioctl_dout(ioctl_dout),
 
       .hdr_card_size(SS_CARD_SIZE),
       .hdr_card_sum(SS_CARD_SUM),
+      .hdr_hu_size(SS_HU_SIZE),
+      .hdr_hu_sum(SS_HU_SUM),
       .size_words(SS_WORDS)
   );
   
@@ -676,9 +690,12 @@ module pce (
   // runs on while VRAM, the SAT and the palette fill, and would draw them half written. A
   // save blanks it from its ask to the let-go (state_engine.sv's blank).
   // Skip the Run screen's black (below) is held the same way.
+  // Skip the Run screen is the system card's: a HuCard has no title to skip and sends the
+  // drive no command, so the presses and the black would never end
+  wire skip_run_on = skip_run_enable & ~hucard;
   reg skip_run_black = 1;
   reg ss_blank_v = 0;
-  always @(posedge clk_mem_85_91) ss_blank_v <= ss_blank | (skip_run_enable & skip_run_black);
+  always @(posedge clk_mem_85_91) ss_blank_v <= ss_blank | (skip_run_on & skip_run_black);
 
   assign {r1, g1, b1} = ss_blank_v ? 24'd0 :
                         raw_rgb_enable ? {{r, r, r[2:1]}, {g, g, g[2:1]}, {b, b, b[2:1]}} : pal_color;
@@ -739,13 +756,13 @@ module pce (
       // and its let-go reads the CPU's fetch again (state_engine.sv)
       .clkref(ce_rom | ss_refetch | ss_sd_ref),
 
-      .waddr(cart_download ? romwr_a : {3'b001, ss_sd ? ss_sd_a : cd_ram_a}),
-      .din(cart_download ? romwr_d : ss_sd ? {ss_sd_d, ss_sd_d} : {cd_ram_do, cd_ram_do}),
-      .we(~cart_download & ((cd_ram_wr & ce_rom) | ss_sd_we)),
+      .waddr(cart_download ? {1'b0, romwr_a} : hucard_download ? {3'b010, romwr_h[21:0]} : {3'b001, ss_sd ? ss_sd_a : cd_ram_a}),
+      .din(rom_download ? romwr_d : ss_sd ? {ss_sd_d, ss_sd_d} : {cd_ram_do, cd_ram_do}),
+      .we(~rom_download & ((cd_ram_wr & ce_rom) | ss_sd_we)),
       .we_req(rom_wr),
       // .we_ack(sd_wrack),
 
-      .raddr(ss_sd ? {3'b001, ss_sd_a} : rom_rd ? {3'b000, (rom_rdaddr + (romwr_a[9] ? 22'h200 : 22'h0))} : {3'b001, cd_ram_a}),
+      .raddr(ss_sd ? {3'b001, ss_sd_a} : rom_rd ? {hucard ? 3'b010 : 3'b000, (rom_rdaddr + (rom_len[9] ? 22'h200 : 22'h0))} : {3'b001, cd_ram_a}),
       .rd(((rom_rd | cd_ram_rd) & (ce_rom | ss_refetch)) | ss_sd_rd),
       .rd_rdy(rom_sdrdy),
       .dout(rom_sdata),
@@ -777,8 +794,16 @@ end
 
 
 
+  // Two cards in the SDRAM: the system card (slot 1) at 0, and slot 100's file at 0x800000,
+  // which the Pocket loads before the core starts whether it is a CUE or a HuCard, so a
+  // HuCard is in before a Memory's file can come. `hucard`, the firmware's word that slot
+  // 100's file is a HuCard (by its name), chooses which the console reads. Each load keeps
+  // its own length, header bit (a 512-byte header when the length's bit 9 is set) and
+  // Populous test, as MiSTer's one load does.
   wire romwr_ack;
-  reg [23:0] romwr_a;
+  reg [23:0] romwr_a;     // the system card's length
+  reg [23:0] romwr_h;     // slot 100's
+  wire rom_download = cart_download | hucard_download;
   wire [15:0] romwr_d = status[3] ?
 		{ ioctl_dout[8], ioctl_dout[9], ioctl_dout[10],ioctl_dout[11],ioctl_dout[12],ioctl_dout[13],ioctl_dout[14],ioctl_dout[15],
 		  ioctl_dout[0], ioctl_dout[1], ioctl_dout[2], ioctl_dout[3], ioctl_dout[4], ioctl_dout[5], ioctl_dout[6], ioctl_dout[7] }
@@ -789,12 +814,16 @@ end
   wire sd_wrack;
 
   // Special support for the Populous ROM
-  reg [1:0] populous;
+  reg [1:0] populous, populous_h;
+  wire [23:0] romwr_w = hucard_download ? romwr_h : romwr_a;   // the load under way's address
+  wire [23:0] rom_len = hucard ? romwr_h : romwr_a;
+  wire  [1:0] rom_pop = hucard ? populous_h : populous;
   // reg sgx;
   always @(posedge clk_sys_42_95) begin
-    reg old_download;
+    reg old_download, old_hdownload;
 
     old_download  <= cart_download;
+    old_hdownload <= hucard_download;
     // old_reset <= reset;
     prev_ioctl_wr <= ioctl_wr;
 
@@ -803,24 +832,28 @@ end
       romwr_a  <= 0;
       populous <= 2'b11;
       // sgx <= ioctl_index[0];
-    end else begin
+    end else if (~old_hdownload && hucard_download) begin
+      romwr_h    <= 0;
+      populous_h <= 2'b11;
+    end else if (rom_download) begin
       if (ioctl_wr && ~prev_ioctl_wr) begin
         // ioctl_wait <= 1;
         rom_wr <= ~rom_wr;
         // Hacks for Populous game
-        if ((romwr_a[23:4] == 'h212) || (romwr_a[23:4] == 'h1f2)) begin
-          case (romwr_a[3:0])
-            6:  if (romwr_d != 'h4F50) populous[romwr_a[13]] <= 0;
-            8:  if (romwr_d != 'h5550) populous[romwr_a[13]] <= 0;
-            10: if (romwr_d != 'h4F4C) populous[romwr_a[13]] <= 0;
-            12: if (romwr_d != 'h5355) populous[romwr_a[13]] <= 0;
+        if ((romwr_w[23:4] == 'h212) || (romwr_w[23:4] == 'h1f2)) begin
+          case (romwr_w[3:0])
+            6:  if (romwr_d != 'h4F50) begin if (hucard_download) populous_h[romwr_w[13]] <= 0; else populous[romwr_w[13]] <= 0; end
+            8:  if (romwr_d != 'h5550) begin if (hucard_download) populous_h[romwr_w[13]] <= 0; else populous[romwr_w[13]] <= 0; end
+            10: if (romwr_d != 'h4F4C) begin if (hucard_download) populous_h[romwr_w[13]] <= 0; else populous[romwr_w[13]] <= 0; end
+            12: if (romwr_d != 'h5355) begin if (hucard_download) populous_h[romwr_w[13]] <= 0; else populous[romwr_w[13]] <= 0; end
           endcase
         end
       end  // else if (rom_wr == sd_wrack) begin
       else if (~ioctl_wr && prev_ioctl_wr) begin
         // Falling edge of ioctl_wr
         // ioctl_wait <= 0;
-        romwr_a <= romwr_a + 24'd2;
+        if (hucard_download) romwr_h <= romwr_h + 24'd2;
+        else romwr_a <= romwr_a + 24'd2;
       end
     end
   end
@@ -861,7 +894,7 @@ end
     else if (!ss_hold) skip_run_count <= skip_run_count + 1'd1;
   end
   // 2^24 clocks, 0.39 s or 23 frames a round; pressed in its last quarter, the first press 0.29 s in
-  wire skip_run_press = skip_run_enable && skip_run_armed && &skip_run_count[23:22];
+  wire skip_run_press = skip_run_on && skip_run_armed && &skip_run_count[23:22];
 
   // With the setting on, the picture is also black until the game draws its own, so the
   // title is never seen. The system card leaves it up, with JUST A MOMENT, until the
@@ -918,7 +951,7 @@ end
         if (!skip_run_sent) skip_run_rounds <= 0;   // skip_run_count starts again with it
         skip_run_sent <= 1;
       end
-      else if (skip_run_round && (skip_run_sent || skip_run_enable)) begin
+      else if (skip_run_round && (skip_run_sent || skip_run_on)) begin
         skip_run_rounds <= skip_run_rounds + 1'd1;
         if ((skip_run_sent && skip_run_rounds == 5'd30) || (!skip_run_sent && skip_run_rounds == 5'd7))
           skip_run_black <= 0;
@@ -1075,21 +1108,21 @@ end
 
   // The save state's chains of main.sv's own (state_engine.sv's 6 and 7), 16 bits a clock:
   // the link to the MPU (the two blocks above and hps_ext.v's), and the pads and the MB128.
+  // Chain 7's top 2 bits, padding until 1.2.0, are SF2's bank (pce_top.vhd's rombank): a
+  // state from before has 0 there, the bank every other card's reads ignore.
   assign       ss_link_we = ss_shift && ss_chain == 4'd6;
   assign       ss_rest_we = ss_shift && ss_chain == 4'd7;
   reg   [11:0] ss_link_pad;
-  reg    [1:0] ss_rest_pad;
   assign       ss_link_v = {ss_link_pad, hps_ss_q,
                             cdd_old_download, cd_head_pos, cd_dat_write, cd_dat_len, cd_dat_cnt, cd_dat, cd_wr, cd_dat_byte,
                             cd_dm, cd_sub, cd_cdg,
                             cd_in, cd_stat, cd_stat_rec, cd_dataout_req, cd_region, cd_out112_last, cd_comm_send_old,
                             cd_dataout_send_old, cd_dat_req_old, cd_reset_req_old};
   assign       ss_link_n = {ss_link_v[303:0], ss_si};
-  assign       ss_rest_v = {ss_rest_pad, mb128_ss_q, joy_latch, last_gp, high_buttons, turbo_counter, joy_port};
+  assign       ss_rest_v = {ss_rombank, mb128_ss_q, joy_latch, last_gp, high_buttons, turbo_counter, joy_port};
   assign       ss_rest_n = {ss_rest_v[79:0], ss_si};
   always @(posedge clk_sys_42_95) begin
     if (ss_link_we) ss_link_pad <= ss_link_n[319:308];
-    if (ss_rest_we) ss_rest_pad <= ss_rest_n[95:94];
   end
   assign       ss_so_main = ss_chain == 4'd6 ? ss_link_v[319:304] : ss_chain == 4'd7 ? ss_rest_v[95:80] : ss_so;
 
@@ -1104,7 +1137,7 @@ end
   wire mb128_ram_din, mb128_ram_we, mb128_ram_dout;
 
   MB128 MB128 (
-      .reset(reset | cart_download),
+      .reset(reset | rom_download),
       .clk_sys(clk_sys_42_95),
 
       .i_Clk(mb128_ena & joy_out[1]),  // send only if MB128 enabled

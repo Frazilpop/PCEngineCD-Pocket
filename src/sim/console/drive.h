@@ -17,6 +17,7 @@ void sim_drv_parked(bool parked, bool restored);	// and CORE_OUTPUT's
 
 // drive.cpp's: the firmware's own drive on the Mac.
 void drive_open(const char *card, const char *cue, const char *out_dir);
+bool drive_hucard_detect();				// main.cpp's start: slot 100's file a HuCard (pcecd.cpp), CORE_OUTPUT[5]
 void drive_poll();						// one pass of the firmware's main loop
 void drive_change_disc(const char *cue);	// the player chose another disc on the Pocket: a new line in the slot table, and the update
 void drive_log(const char *what);		// a line in drive.log

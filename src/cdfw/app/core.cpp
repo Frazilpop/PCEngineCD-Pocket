@@ -72,6 +72,12 @@ bool old_arcade = 0;
 
 // A save state's hooks (app/state.h): CORE_INPUT's bits from the core, CORE_OUTPUT's to it
 static uint32_t state_bits = 0;
+static uint32_t hucard_bits = 0;
+void core_set_hucard(bool on)
+{
+	hucard_bits = on ? OUTPUT_HUCARD : 0;
+	CORE_OUTPUT_REGISTOR() = core_output_bits(AFP_REGISTOR(1)) | state_bits | hucard_bits;
+}
 bool core_park_asked() { return CORE_INPUT_REGISTOR() & INPUT_PARK; }
 bool core_state_in() { return CORE_INPUT_REGISTOR() & INPUT_STATE_IN; }
 bool core_park_load() { return CORE_INPUT_REGISTOR() & INPUT_LOAD; }
@@ -80,11 +86,11 @@ void core_set_parked(bool parked, bool restored)
 {
 	if (parked && !restored) drive_trace_parked();
 	state_bits = (parked ? OUTPUT_PARKED : 0) | (restored ? OUTPUT_RESTORED : 0);
-	CORE_OUTPUT_REGISTOR() = core_output_bits(AFP_REGISTOR(1)) | state_bits;
+	CORE_OUTPUT_REGISTOR() = core_output_bits(AFP_REGISTOR(1)) | state_bits | hucard_bits;
 }
 void core_reg_update(){
 	// This can be used for polling the APF regs from the interaction menu to change core settings
-	// Region setup
+	// Region setup: the CD's signature, so nothing to a HuCard (pcecd.cpp)
 	if ((AFP_REGISTOR(1) & 0x1) || bios_us) cue.SetRegion(1);
 	else cue.SetRegion(0);
 	// Fast seek, MiSTer's CD Seek setting: off unless asked for. The bit that told
@@ -95,7 +101,7 @@ void core_reg_update(){
 	// Arcade Setup
 
 	// The Arcade Card and the Memory Base 128, as asked, and the drive's part in a save state
-	CORE_OUTPUT_REGISTOR() = core_output_bits(AFP_REGISTOR(1)) | state_bits;
+	CORE_OUTPUT_REGISTOR() = core_output_bits(AFP_REGISTOR(1)) | state_bits | hucard_bits;
 	// if (old_arcade != AFP_REGISTOR(1) & 0x2) full_core_reset();
 
 };

@@ -46,6 +46,11 @@ module state_bridge (
     // what the header is checked against (clk_sys)
     input  wire [31:0] card_size,
     input  wire [31:0] card_sum,
+    // slot 100's file's, for a HuCard's state, and the firmware's word that the console
+    // reads it (0 until the firmware runs: on a launch from a Memory the state comes first)
+    input  wire [31:0] hu_size,
+    input  wire [31:0] hu_sum,
+    input  wire        hucard,
     input  wire        mb128_on,
     input  wire        ac_on,
     input  wire [20:0] ss_words,            // a save's size in words, as the engine has it
@@ -141,18 +146,25 @@ wire [15:0] ld_d = {ld_data[7:0], ld_data[15:8]};   // the file's first byte is 
 
 // ---- the header's check ----
 
+// A HuCard's state (flag bit 4) names slot 100's file where a disc's names the system card.
+// A disc's state is refused once the firmware has said the console runs a HuCard: the
+// system card is still in, so its sum would match, but the console reads the HuCard. Before
+// the firmware has run nothing is known, and the Pocket launches a Memory with its own file.
 reg [20:0] ld_size = 0;                 // the file's words, from its header
 reg        ld_match;
+reg        ld_hu = 0;                   // the file's flag: a HuCard's
+wire [31:0] id_size = ld_hu ? hu_size : card_size;
+wire [31:0] id_sum  = ld_hu ? hu_sum : card_sum;
 always @* begin
     case (ld_w[3:0])
         4'd0:    ld_match = ld_d == 16'h5043;       // PCSS
         4'd1:    ld_match = ld_d == 16'h5353;
         4'd2:    ld_match = ld_d == 16'h0001;       // the format's version
-        4'd3:    ld_match = ld_d[0] == mb128_on && (ac_on || !ld_d[1]) && !ld_d[3];
-        4'd6:    ld_match = ld_d == card_size[31:16];
-        4'd7:    ld_match = ld_d == card_size[15:0];
-        4'd8:    ld_match = ld_d == card_sum[31:16];
-        4'd9:    ld_match = ld_d == card_sum[15:0];
+        4'd3:    ld_match = ld_d[0] == mb128_on && (ac_on || !ld_d[1]) && !ld_d[3] && (ld_d[4] || !hucard);
+        4'd6:    ld_match = ld_d == id_size[31:16];
+        4'd7:    ld_match = ld_d == id_size[15:0];
+        4'd8:    ld_match = ld_d == id_sum[31:16];
+        4'd9:    ld_match = ld_d == id_sum[15:0];
         default: ld_match = 1'b1;
     endcase
 end
@@ -235,6 +247,7 @@ always @(posedge clk_sys) begin
         if (ld_w == 0) begin ld_bad <= ~ld_match; ld_last <= 0; end
         else if (ld_w < 21'd15) begin
             if (~ld_match) ld_bad <= 1;
+            if (ld_w == 21'd3) ld_hu <= ld_d[4];
             if (ld_w == 21'd4) ld_size[20:15] <= ld_d[5:0];
             if (ld_w == 21'd5) ld_size[14:0] <= ld_d[15:1];
         end

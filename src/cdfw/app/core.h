@@ -43,6 +43,7 @@ void core_reset(int reset);
 void core_fdd_update();
 void core_poll_io();
 void core_reg_update();
+void core_set_hucard(bool on);	// CORE_OUTPUT[5]: slot 100's file is a HuCard
 void core_restart_first();
 void core_restart_running_core();
 void core_input_setup();

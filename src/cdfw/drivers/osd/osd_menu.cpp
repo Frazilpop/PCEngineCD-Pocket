@@ -62,7 +62,7 @@ void osd_display_info(){
     OsdUpdate(0);
     OsdClear();
     beat++;
-    sprintf (s, "S:%c R:%d T:%d K:%d %c B:%d", drive_trace.stage, drive_trace.resets, cue.TrackCount(), drive_trace.bios_size / 1024, drive_trace.bios_us ? 'U' : 'J', beat);
+    sprintf (s, "S:%c R:%d T:%d K:%d %c B:%d", drive_trace.stage, drive_trace.resets, cue.TrackCount(), drive_trace.bios_size / 1024, drive_trace.hucard ? 'H' : drive_trace.bios_us ? 'U' : 'J', beat);
     OsdWrite(s);
     OsdUpdate(2);
     OsdClear();

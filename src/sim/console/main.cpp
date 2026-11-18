@@ -618,6 +618,7 @@ static void p_start_save(const std::string &file) {
 static void pocket_sys_edge() {
   pb->ss_status = pre_status; pb->ss_do = pre_do;
   pb->card_size = top->ss_card_size; pb->card_sum = top->ss_card_sum; pb->ss_words = top->ss_words;
+  pb->hu_size = top->ss_hu_size; pb->hu_sum = top->ss_hu_sum; pb->hucard = top->hucard;
   pb->mb128_on = set_mb128; pb->ac_on = set_ac;		// core_top.v's ss_setting
   pb->clk_sys = 1; pb->eval();
   top->ss_save = pb->ss_save; top->ss_load = pb->ss_load; top->ss_go = pb->ss_go;
@@ -943,23 +944,33 @@ int main(int argc, char **argv) {
   fflush(stdout);
   if (!save_in.empty()) save_load(save_in);
 
-  // The system card through the real path: main.sv's ROM size and header come from
-  // this, as they do from core_top.v's data loader.
-  FILE *f = fopen(card_path.c_str(), "rb");
-  std::vector<uint8_t> rom;
-  if (f) { int c; while ((c = fgetc(f)) != EOF) rom.push_back(c); fclose(f); }
-  top->cart_download = 1;
-  sim_tick(16);
-  for (size_t i = 0; i < rom.size(); i += 2) {
-    top->ioctl_dout = rom[i] | (i + 1 < rom.size() ? rom[i + 1] << 8 : 0);
-    top->ioctl_wr = 1;
-    sim_tick(8);
-    top->ioctl_wr = 0;
-    sim_tick(8);
-  }
-  top->cart_download = 0;
-  sim_tick(200);
+  // Slot 100's file and the system card through the real path, as the Pocket loads them
+  // before the core starts (data.json's order): main.sv's ROM sizes and headers come from
+  // these, as they do from core_top.v's data loaders. Slot 100 goes in whatever it is, a
+  // CUE or a HuCard, as on the Pocket.
+  auto load_file = [&](const std::string &path, bool slot100) {
+    std::vector<uint8_t> b;
+    FILE *f = fopen(path.c_str(), "rb");
+    if (f) { int c; while ((c = fgetc(f)) != EOF) b.push_back(c); fclose(f); }
+    (slot100 ? top->hucard_download : top->cart_download) = 1;
+    sim_tick(16);
+    for (size_t i = 0; i < b.size(); i += 2) {
+      top->ioctl_dout = b[i] | (i + 1 < b.size() ? b[i + 1] << 8 : 0);
+      top->ioctl_wr = 1;
+      sim_tick(8);
+      top->ioctl_wr = 0;
+      sim_tick(8);
+    }
+    (slot100 ? top->hucard_download : top->cart_download) = 0;
+    sim_tick(200);
+    return b;
+  };
+  std::vector<uint8_t> slot100;
+  if (!disc_path.empty()) slot100 = load_file(disc_path, true);
+  std::vector<uint8_t> rom = load_file(card_path, false);
   card_bytes = rom;
+  // the firmware's first look, before the console's reset is first let go (main.cpp's mainloop)
+  bool is_hucard = drive_hucard_detect();
   if (!st_load.empty()) {
     // the header, as state_bridge.sv checks it: the magic, the version, this system card
     FILE *fs = fopen(st_load.c_str(), "rb");
@@ -973,7 +984,8 @@ int main(int argc, char **argv) {
     if (getenv("SIM_POCKET_ACFLAG")) st_loaded[7] |= 2;
     SS_WORDS = st_loaded.size() / 2;
     uint32_t size = 0, sum = 0;
-    for (size_t i = 0; i + 1 < rom.size(); i += 2) { size += 2; sum += rom[i] << 8 | rom[i + 1]; }
+    const std::vector<uint8_t> &id = (st_loaded[7] & 0x10) ? slot100 : rom;	// a HuCard's state names it
+    for (size_t i = 0; i + 1 < id.size(); i += 2) { size += 2; sum += id[i] << 8 | id[i + 1]; }
     auto be32 = [&](int o) { return (uint32_t)st_loaded[o] << 24 | st_loaded[o + 1] << 16 | st_loaded[o + 2] << 8 | st_loaded[o + 3]; };
     if (!pb && (memcmp(st_loaded.data(), "PCSS", 4) || st_loaded[4] || st_loaded[5] != 1 || be32(0x0C) != size || be32(0x10) != sum)) {
       fprintf(stderr, "%s is not a state of this system card\n", st_load.c_str()); return 1;
@@ -989,10 +1001,11 @@ int main(int argc, char **argv) {
     while (!pb->mpu_reset_n) sim_tick(100);
     sim_tick(CLK_HZ / 100 * 53);
   }
+  top->hucard = is_hucard;
   top->core_reset = 0;
   running = true;
   run_from = clocks;
-  printf("Card in, %zu bytes, %.0f s to load; the console runs\n", rom.size(),
+  printf("%s in, %zu bytes, %.0f s to load; the console runs\n", is_hucard ? "HuCard" : "Card", is_hucard ? slot100.size() : rom.size(),
          std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count());
   fflush(stdout);
 

@@ -17,6 +17,7 @@ typedef struct {
 	uint8_t last[6];
 	uint32_t bios_size;
 	bool bios_us;
+	bool hucard;
 	uint32_t bios_error;
 	uint32_t park_asks, parks, park_missed, park_late, wait_max, restores, restore_refused;
 } drive_trace_t;

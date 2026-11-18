@@ -49,6 +49,7 @@ typedef struct {
   uint8_t last[6];      // the last command's first bytes
   uint32_t bios_size;   // the system card's size in the slot table
   bool bios_us;
+  bool hucard;          // slot 100's file is a HuCard: the drive has no disc (pcecd.cpp)
   uint32_t bios_error;  // what reading the system card from the slot answered
   // save states (pcecd.cpp's park): parks asked of the drive, made, and asked but taken
   // back unmade; the last park's lateness in ms, from its ask seen in a wait on the card

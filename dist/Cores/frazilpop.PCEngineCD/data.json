@@ -7,9 +7,9 @@
 	"id": 100,
 	"required": true,
 	"parameters": "0x00000008",
-	"deferload": true,
-	"size_maximum": "0x10000",
-	"extensions": ["cue"]
+	"address": "0x30000000",
+	"size_maximum": "0x280200",
+	"extensions": ["cue", "pce"]
 	},
 	{
 	"name": "CDRom Bin File",

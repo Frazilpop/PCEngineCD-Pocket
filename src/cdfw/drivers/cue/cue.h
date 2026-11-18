@@ -232,6 +232,8 @@ private:
 //pcecdd.cpp
 extern cue_t cue;
 extern bool bios_us;
+extern bool hucard;
+bool pcecd_hucard_detect();
 
 
 void pcecd_poll();

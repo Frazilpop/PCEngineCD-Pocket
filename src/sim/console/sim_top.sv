@@ -8,6 +8,8 @@ module sim_top (
 	input  logic core_reset,
 
 	input  logic cart_download,
+	input  logic hucard_download,		// slot 100's load (core_top.v's), and the firmware's CORE_OUTPUT[5]
+	input  logic hucard,
 	input  logic ioctl_wr,
 	input  logic [15:0] ioctl_dout,
 
@@ -75,6 +77,8 @@ module sim_top (
 	// what state_bridge.sv checks a header against, and a save's size (main.cpp's --pocket)
 	output logic [31:0] ss_card_size,
 	output logic [31:0] ss_card_sum,
+	output logic [31:0] ss_hu_size,
+	output logic [31:0] ss_hu_sum,
 	output logic [20:0] ss_words,
 	output logic [11:0] ss_refused,		// state_engine.sv's refused saves and the last one's seen bits
 	// the chips' own sound, before the filters: {psg_sl, psg_sr, cdda_sl, cdda_sr, adpcm_s}
@@ -184,6 +188,8 @@ module sim_top (
 		.ioctl_addr(24'd1),
 		.ioctl_dout(ioctl_dout),
 		.cart_download(cart_download),
+		.hucard_download(hucard_download),
+		.hucard(hucard),
 
 		.sd_wr(sd_wr),
 		.sd_rd(sd_rd),
@@ -222,7 +228,7 @@ module sim_top (
 
 		.SS_SAVE(ss_save), .SS_LOAD(ss_load), .SS_MENU(1'b0), .SS_CMD_NEW(1'b0), .SS_CMD(17'd0), .SS_GO(ss_go), .SS_STATUS(ss_status),
 		.SS_ADDR(ss_addr), .SS_RD(ss_rd), .SS_DO(ss_do), .SS_WR(ss_wr), .SS_DI(ss_di),
-		.SS_CARD_SIZE(ss_card_size), .SS_CARD_SUM(ss_card_sum), .SS_WORDS(ss_words),
+		.SS_CARD_SIZE(ss_card_size), .SS_CARD_SUM(ss_card_sum), .SS_HU_SIZE(ss_hu_size), .SS_HU_SUM(ss_hu_sum), .SS_WORDS(ss_words),
 		.SS_DRV_PARK(drv_park), .SS_DRV_IN(drv_in), .SS_DRV_LOAD(drv_load), .SS_REFUSED(ss_refused), .SS_MB128_ON(ss_mb128_on), .SS_AC_ON(ss_ac_on), .SS_DRV_PARKED(drv_parked), .SS_DRV_RESTORED(drv_restored)
 	);
 

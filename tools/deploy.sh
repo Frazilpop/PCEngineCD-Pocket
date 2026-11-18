@@ -19,7 +19,10 @@
 #
 # A bitstream older than BITSTREAM_NOT_BEFORE isn't deployed: each Mac builds its
 # own, so one can have this firmware and a bitstream from before a change between
-# the two. Set it when such a change goes in. The last, 6 Nov 2026 at 17:15: a
+# the two. Set it when such a change goes in. The last, 18 Nov 2026 at 13:20: HuCards,
+# slot 100 loaded by the Pocket into the SDRAM beside the system card and CORE_OUTPUT[5]
+# choosing it; with an older bitstream a HuCard's file never reaches the SDRAM. Before
+# it, 6 Nov 2026 at 17:15: a
 # Memory's load answered once its file is in, not once the drive has read the card
 # again, as this firmware's park no longer waits on a read; with an older bitstream a
 # load waits on the card while the Pocket waits on the load. Before it, 6 Nov 2026: the
@@ -39,7 +42,7 @@ DIST="$REPO/dist"
 BIN="$DIST/Cores/$CORE/bitstream.rbf_r"
 FW="$DIST/Assets/pcecd/$CORE/pce_mpu_bios.bin"
 RECORD="$REPO/build/deployed.txt"
-BITSTREAM_NOT_BEFORE="2026-11-06 17:15"
+BITSTREAM_NOT_BEFORE="2026-11-18 13:20"
 [ -f "$BIN" ] || { echo "no $BIN - run tools/build.sh first"; exit 1; }
 
 VOL="" STATUS=0

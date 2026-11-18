@@ -143,7 +143,12 @@ entity pce_top is
 		SS_FCLR		: in  std_logic := '0';
 		SS_FD			: in  std_logic_vector(31 downto 0) := (others => '0');
 		SS_FQ			: out std_logic_vector(31 downto 0);
-		SS_FCNT		: out std_logic_vector(12 downto 0)
+		SS_FCNT		: out std_logic_vector(12 downto 0);
+		-- SF2's bank (the 2.5 MB card's mapper), for main.sv's chain 7: SS_RBQ is it, and
+		-- SS_RBWE writes SS_RBD into it
+		SS_RBQ		: out std_logic_vector(1 downto 0);
+		SS_RBD		: in  std_logic_vector(1 downto 0) := (others => '0');
+		SS_RBWE		: in  std_logic := '0'
 	);
 end pce_top;
 
@@ -739,6 +744,8 @@ ROM_A <=   "00000"&CPU_A(16 downto 0)                                       when
           &(CPU_A(19) and not rombank(0))&CPU_A(18 downto 0)                when rom_sz = X"280" -- SF2
       else "00"&CPU_A(19 downto 0);                                                             -- 1MB and others
 
+SS_RBQ <= rombank;
+
 ROM_RD    <= CPU_PRE_RD and not CPU_ROM_SEL_N and CPU_PRAM_SEL_N and ((AC_RAM_CS_N and CD_RAM_CS_N) or not CD_EN);
 ROM_CLKEN <= CPU_CLKEN;
 
@@ -746,6 +753,8 @@ process( CLK ) begin
 	if rising_edge( CLK ) then
 		if RESET = '1' then
 			rombank <= "00";
+		elsif SS_RBWE = '1' then
+			rombank <= SS_RBD;
 		elsif CPU_CE = '1' then
 			-- CPU_A(12 downto 2) = X"7FC" means CPU_A & 0x1FFC = 0x1FF0
 			if CPU_A(20) = '0' and ('0' & CPU_A(12 downto 2)) = X"7FC" and CPU_WR_N = '0' then

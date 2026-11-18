@@ -138,14 +138,19 @@ module state_engine (
 	output reg         bk_we = 0,
 	input  wire [15:0] bk_q,
 
-	// the system card as it loads, for the header's size and sum
+	// the system card as it loads, for the header's size and sum, and slot 100's file the
+	// same way; hucard (the firmware's) says the console reads the second, a HuCard
 	input  wire        cart_download,
+	input  wire        hucard_download,
+	input  wire        hucard,
 	input  wire        ioctl_wr,
 	input  wire [15:0] ioctl_dout,
 
 	// for the bridge: what a header is checked against, and a save's size in words
 	output wire [31:0] hdr_card_size,
 	output wire [31:0] hdr_card_sum,
+	output wire [31:0] hdr_hu_size,
+	output wire [31:0] hdr_hu_sum,
 	output wire [20:0] size_words
 );
 
@@ -206,18 +211,30 @@ localparam [1:0] F_SCSI = 2'd0, F_CDDA = 2'd1, F_SUBC = 2'd2;
 
 // ---- the card, as it loads ----
 reg [31:0] card_size = 0, card_sum = 0;
+reg [31:0] hu_size = 0, hu_sum = 0;
 assign hdr_card_size = card_size;
 assign hdr_card_sum = card_sum;
-reg        dl_old = 0, wr_old = 0;
+assign hdr_hu_size = hu_size;
+assign hdr_hu_sum = hu_sum;
+reg        dl_old = 0, hdl_old = 0, wr_old = 0;
 always @(posedge clk) begin
 	dl_old <= cart_download;
+	hdl_old <= hucard_download;
 	wr_old <= ioctl_wr;
 	if (cart_download & ~dl_old) begin card_size <= 0; card_sum <= 0; end
 	else if (cart_download && ioctl_wr && !wr_old) begin
 		card_size <= card_size + 32'd2;
 		card_sum <= card_sum + {ioctl_dout[7:0], ioctl_dout[15:8]};
 	end
+	if (hucard_download & ~hdl_old) begin hu_size <= 0; hu_sum <= 0; end
+	else if (hucard_download && ioctl_wr && !wr_old) begin
+		hu_size <= hu_size + 32'd2;
+		hu_sum <= hu_sum + {ioctl_dout[7:0], ioctl_dout[15:8]};
+	end
 end
+// a HuCard's state names the HuCard where a disc's names its system card
+wire [31:0] id_size = hucard ? hu_size : card_size;
+wire [31:0] id_sum  = hucard ? hu_sum : card_sum;
 
 // ---- the Arcade Card's RAM: the end of the highest 64K the game has written since power-up ----
 reg [5:0] ac_hw = 0;
@@ -374,13 +391,13 @@ function [15:0] hdr_word(input [6:0] k);
 	7'd0:  hdr_word = 16'h5043;			// PCSS
 	7'd1:  hdr_word = 16'h5353;
 	7'd2:  hdr_word = 16'd1;				// the format's version
-	7'd3:  hdr_word = {12'd0, 1'b0, rec_fast, f_ac, mb128_on};	// flags: the MB128, the Arcade Card's RAM, 7.16 MHz, SuperGrafx
+	7'd3:  hdr_word = {11'd0, hucard, 1'b0, rec_fast, f_ac, mb128_on};	// flags: the MB128, the Arcade Card's RAM, 7.16 MHz, SuperGrafx, a HuCard's
 	7'd4:  hdr_word = {10'd0, W_SIZE[20:15]};	// the file's size in bytes: W_SIZE * 2
 	7'd5:  hdr_word = {W_SIZE[15:0], 1'b0};
-	7'd6:  hdr_word = card_size[31:16];
-	7'd7:  hdr_word = card_size[15:0];
-	7'd8:  hdr_word = card_sum[31:16];
-	7'd9:  hdr_word = card_sum[15:0];
+	7'd6:  hdr_word = id_size[31:16];
+	7'd7:  hdr_word = id_size[15:0];
+	7'd8:  hdr_word = id_sum[31:16];
+	7'd9:  hdr_word = id_sum[15:0];
 	7'd10: hdr_word = {10'd0, ac_hw};
 	7'd18: hdr_word = rec_frame[31:16];
 	7'd19: hdr_word = rec_frame[15:0];
