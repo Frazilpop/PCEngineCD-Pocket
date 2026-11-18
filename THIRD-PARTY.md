@@ -32,6 +32,9 @@ Changed here, each for a reason in the git history: Mazamars312's `almost_full` 
 
 From [agg23/analogue-pocket-utils](https://github.com/agg23/analogue-pocket-utils), © 2022 Adam Gastineau, MIT: `data_loader.sv`, `data_unloader.sv`, `sound_i2s.sv`, `sync_fifo.sv`. Keep their notices.
 
+### RndMnkIII's Analogizer module – `src/fpga/analogizer/`
+The adapter module of RndMnkIII's [Analogizer](https://github.com/RndMnkIII/Analogizer) (`analogizer/` at `4b35f83`, © 2024 RndMnkIII, MIT, its notice in the folder's `LICENSE`), only the files it uses, as `analogizer.qip` lists them, taken as [Genesis-Pocket](https://github.com/Frazilpop/Genesis-Pocket) has them. Three carry their own licences: `yc_out.sv` (Mike Simone, GPL-2.0-or-later), `scandoubler.v` (Till Harbaum, from MiST, GPL-3.0-or-later) and `vga_out_sw.v` (after MiSTer's `vga_out`, by Sorgelig, GPL). The changes, marked "Local change" in the files: the scandoubler's divider an input of the module and four bits wide, its line's length a parameter, bank0's value with the module off an input, and the PlayStation pad reader left out, as its `dualshock_controller.v` is free for non-commercial use only, which the GPL does not allow.
+
 ### Analogue's openFPGA framework – `src/fpga/apf/`
 © Analogue Enterprises Limited, under Analogue's own licence, in each file's header (the Pocket EULA, for use with Analogue's products). Not GPL; it is the framework every Pocket core is built in, and is left as Analogue ship it. `src/fpga/MPU/core_bridge_cmd.v` is Analogue's too.
 
@@ -39,7 +42,7 @@ From [agg23/analogue-pocket-utils](https://github.com/agg23/analogue-pocket-util
 The PLL (`mf_pllbase*`), the MPU's RAMs and FIFOs and the CD FIFOs above are made by Quartus's IP wizards, © Intel Corporation, under Intel's terms in each file's header: for use in Intel devices.
 
 ### This core's own
-`state_engine.sv`, `state_bridge.sv`, `mb128_psram.sv`, `adpcm_psram.sv`, and the rest of `core_top.v`, `main.sv` and the firmware's changes since 0.2.3: GPL-3.0, as the whole.
+`state_engine.sv`, `state_bridge.sv`, `mb128_psram.sv`, `adpcm_psram.sv`, `pocket_analogizer.sv`, and the rest of `core_top.v`, `main.sv` and the firmware's changes since 0.2.3: GPL-3.0, as the whole.
 
 ## The firmware (`src/cdfw`)
 

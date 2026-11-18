@@ -9,6 +9,7 @@ This core was originally forked from [Mazamars312's openfpga-pcengine-cd](https
 - **High compatibility.** CUEs with PREGAP lines, CUEs over 16K and CUEs that point into another folder all now load. Fan translations, including the English patched version of Castlevania: Rondo of Blood, can be played on this core.
 - **2K saves.** The PC Engine CD's built-in save system works reliably for saving and loading games. The Memory Base 128 is also supported.
 - **Memories and Sleep.** Pause and resume anywhere with save states and sleep/resume.
+- **Analogizer.** Play on a CRT or TV.
 - **Some more stuff too** including support for multi-disc games, CD+G, and the option to skip the system card title.
 
 ## Installation
@@ -31,6 +32,21 @@ This core supports Memories (save states) and Sleep. It's 448K, 576K with the Me
 ## Memory Base 128
 
 The Memory Base 128 is the add-on for save backups. Turn on Memory Base 128 in Core Settings and a game that looks for one finds one. It's off by default, as it is on MiSTer. With it on, the game's `.sav` becomes 130K: the same 2K first, then the 128K, so an old 2K save loads as it was. Turning the setting off again doesn't cut a 130K save down.
+
+## Analogizer
+
+The core supports RndMnkIII's [Analogizer](https://github.com/RndMnkIII/Analogizer),
+which plugs into the Pocket's cartridge slot. It sends the console's own
+picture to a CRT or TV, and lets you play with SNAC controllers.
+
+- **Video**: the console's 15 kHz picture as RGBS, RGsB, YPbPr or Y/C (NTSC or PAL), or 31 kHz for a VGA monitor through the scandoubler, with 0–75 % scanlines (HQ2x shows as the plain scandoubler).
+- **Controllers**: PC Engine 2- and 6-button pads and the PC Engine multitap, and DB15, NES and SNES pads, through a SNAC adapter, for any of the four players. They work as the Pocket's own controls do, so players 2 to 4 need Use Turbo Tap on and buttons III to VI need Use 6 Button Ctrl.
+- **Setup**: the core reads the shared `analogizer.bin` in `Assets/analogizer/common/`, which Pupdate or AnalogizerConfigurator writes. That file sets the video mode, the controllers and whether the Pocket's own screen stays on. Without it the core works as normal.
+
+Once an Analogizer is set up in `analogizer.bin`, the core drives the cartridge
+slot, as every Analogizer core does, so play with the adapter in the slot rather
+than a game cartridge. Without it set up, the core leaves the slot and this is
+not an issue.
 
 ## Core Settings
 
@@ -62,6 +78,7 @@ The Memory Base 128 is the add-on for save backups. Turn on Memory Base 128 in C
 - **CedricPelchat** – the CUE loader's fixes and its tests; **davewongillies** – the save fix and the default system card.
 - **Dennis van Weeren and Jakub Bednarski** – Minimig's OSD; **Alastair Robinson** – EightThirtyTwo's interrupt code; **Marco Paland** – printf; **Serge Vakulenko** – uOS's scanf, all in the firmware.
 - **SpinalHDL** – VexRiscv, the MPU's CPU.
+- **RndMnkIII** – the Analogizer and its module, with **Mike Simone**'s Y/C encoder and **Till Harbaum**'s scandoubler from MiST.
 - **Analogue** – the openFPGA core framework.
 - Pocket core by **Frazilpop**.
 

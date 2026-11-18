@@ -19,7 +19,7 @@
 
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-BITSTREAM_SHA256=52d259fd7b8d9800c0a937fda58fea7a2147c472bf5ff3ab33d18edbbd03ab3a
+BITSTREAM_SHA256=e7772a0a6219997a339b9c0cc8822684dc67aece87c3d9d3f2cbac6db57e9eb6
 FIRMWARE_SHA256=c087f589f7ce18356653d31ca65344ad725ff007d03b5fe3242cc5b2c1507b3c
 OUT="$REPO/build/release"
 cd "$REPO"
