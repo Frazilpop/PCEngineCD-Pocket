@@ -147,7 +147,7 @@
         "value": 1
       },
       {
-        "name": "Master Audio Boost",
+        "name": "Audio Boost",
         "id": 69,
         "type": "list",
         "enabled": true,
@@ -157,48 +157,54 @@
         "defaultval": 0,
         "options": [
           {
-            "name": "No Boost",
+            "name": "Off",
             "value": 0
           },
           {
-            "name": "2x Boost",
+            "name": "2x",
             "value": 1
           },
           {
-            "name": "4x Boost",
+            "name": "4x",
             "value": 2
           }
         ]
       },
       {
-        "name": "CD Audio Boost",
-        "id": 71,
-        "type": "check",
-        "enabled": true,
-        "address": "0x00000308",
-        "persist": true,
-        "writeonly": true,
-        "defaultval": 0,
-        "value": 1
-      },
-      {
-        "name": "ADPCM Audio Boost",
-        "id": 70,
-        "type": "check",
+        "name": "Audio Balance",
+        "id": 81,
+        "type": "list",
         "enabled": true,
         "address": "0x00000304",
         "persist": true,
         "writeonly": true,
         "defaultval": 0,
-        "value": 1
+        "options": [
+          {
+            "name": "Even",
+            "value": 0
+          },
+          {
+            "name": "CD Music Boost",
+            "value": 2
+          },
+          {
+            "name": "Voices Boost",
+            "value": 1
+          },
+          {
+            "name": "Both",
+            "value": 3
+          }
+        ]
       },
       {
         "name": "CD Debug",
-        "id": 75,
+        "id": 82,
         "type": "check",
         "enabled": true,
         "address": "0xF0000008",
-        "persist": true,
+        "persist": false,
         "writeonly": true,
         "defaultval": 0,
         "value": 1

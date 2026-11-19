@@ -418,11 +418,11 @@ parameter CMD_REG_ADDRESS 			= 8'hf8;
         16'h0300: begin
           master_audio_boost <= bridge_wr_data[1:0];
         end
+        // Audio Boost, one Core Settings list for both (bit 0 the ADPCM, bit 1 the CD): the
+        // Pocket shows only so many lines, and CD Debug had dropped off the bottom
         16'h0304: begin
           adpcm_audio_boost <= bridge_wr_data[0];
-        end
-        16'h0308: begin
-          cd_audio_boost <= bridge_wr_data[0];
+          cd_audio_boost <= bridge_wr_data[1];
         end
       endcase
     end

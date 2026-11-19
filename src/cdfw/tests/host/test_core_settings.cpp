@@ -39,6 +39,25 @@ int main()
 	is(menu_value(json, "Fast CD Seek"), SETTING_FAST_SEEK, "Fast CD Seek's bit");
 	is(menu_value(json, "Memory Base 128"), SETTING_MB128, "Memory Base 128's bit");
 
+	// The Pocket shows only so many Core Settings lines: interact.json's, and one for each slot in
+	// data.json with bit 0 of its parameters (user-reloadable). With 18 the last, CD Debug, was
+	// out of sight (19 Nov 2026, 17 shown), so the menu is held to 16.
+	{
+		std::ifstream d("../../../../dist/Cores/frazilpop.PCEngineCD/data.json");
+		std::stringstream ds;
+		ds << d.rdbuf();
+		std::string data = ds.str();
+		if (data.empty()) { puts("WRONG data.json not read"); bad = 1; }
+		int lines = 0;
+		for (size_t at = 0; (at = json.find("\"id\"", at)) != std::string::npos; at++) lines++;
+		for (size_t at = 0; (at = data.find("\"parameters\"", at)) != std::string::npos; at++) {
+			size_t v = data.find_first_not_of(" \t:\"", data.find(':', at));
+			if (strtoul(data.c_str() + v, 0, 0) & 1) lines++;
+		}
+		if (lines > 16) { printf("WRONG %d lines in Core Settings, more than 16\n", lines); bad = 1; }
+	}
+	if (json.find("\"CD Debug\"") == std::string::npos) { puts("WRONG CD Debug is out of the menu"); bad = 1; }
+
 	is(core_output_bits(0), 0, "nothing set");
 	is(core_output_bits(SETTING_MB128), OUTPUT_MB128, "Memory Base 128 alone reaches the chip");
 	is(core_output_bits(SETTING_ARCADE), OUTPUT_ARCADE, "Arcade System alone reaches the chip");
