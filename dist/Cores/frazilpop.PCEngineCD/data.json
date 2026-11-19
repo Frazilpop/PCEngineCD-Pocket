@@ -3,10 +3,10 @@
     "magic": "APF_VER_1",
     "data_slots": [
 	{
-	"name": "CDRom Cue File",
+	"name": "Game",
 	"id": 100,
 	"required": true,
-	"parameters": "0x00000008",
+	"parameters": "0x00000109",
 	"address": "0x30000000",
 	"size_maximum": "0x280200",
 	"extensions": ["cue", "pce"]
