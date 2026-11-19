@@ -37,6 +37,7 @@ uint8_t frame_counter = 0;
 #define DEBUG_OVERLAY_ON (AFP_REGISTOR(2) == 1)
 
 drive_trace_t drive_trace = { 'w' };
+extern uint8_t card_asked_again;	// apf.cpp
 static uint32_t beat = 0;   // keeps counting while the firmware is alive
 
 void osd_display_error_apf(){
@@ -62,7 +63,8 @@ void osd_display_info(){
     OsdUpdate(0);
     OsdClear();
     beat++;
-    sprintf (s, "S:%c R:%d T:%d K:%d %c B:%d", drive_trace.stage, drive_trace.resets, cue.TrackCount(), drive_trace.bios_size / 1024, drive_trace.hucard ? 'H' : drive_trace.bios_us ? 'U' : 'J', beat);
+    // G: the commands to the Pocket asked again by the bridge's watchdog (core_bridge_cmd.v)
+    sprintf (s, "S:%c R:%d T:%d K:%d %c B:%d G:%d", drive_trace.stage, drive_trace.resets, cue.TrackCount(), drive_trace.bios_size / 1024, drive_trace.hucard ? 'H' : drive_trace.bios_us ? 'U' : 'J', beat, card_asked_again);
     OsdWrite(s);
     OsdUpdate(2);
     OsdClear();

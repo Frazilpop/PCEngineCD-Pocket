@@ -508,6 +508,7 @@ parameter CMD_REG_ADDRESS 			= 8'hf8;
 	wire            target_dataslot_ack;        
 	wire            target_dataslot_done;
 	wire    [5:0]   target_dataslot_err;
+	wire    [7:0]   target_wd_count;	// the bridge's commands asked again (core_bridge_cmd.v), for the CD Debug overlay
 
 	wire     [15:0] target_dataslot_id;
 	wire     [31:0] target_dataslot_slotoffset;
@@ -612,7 +613,9 @@ core_bridge_cmd icb (
     .datatable_wren         		( datatable_wren ),
     .datatable_rden         		( datatable_rden ),
     .datatable_data         		( datatable_data ),
-    .datatable_q            		( datatable_q )
+    .datatable_q            		( datatable_q ),
+
+    .target_wd_count        		( target_wd_count )
 
 );
 
@@ -739,6 +742,7 @@ MPU_AFP_CORE #(
 		.target_dataslot_ack        	( target_dataslot_ack ),
 		.target_dataslot_done       	( target_dataslot_done ),
 		.target_dataslot_err        	( target_dataslot_err ),
+		.target_wd_count        		( target_wd_count ),
 
 		.target_dataslot_id         		( target_dataslot_id ),
 		.target_dataslot_slotoffset 		( target_dataslot_slotoffset ),

@@ -31,6 +31,9 @@
 #include "timer.h"
 
 void drive_trace_card_wait(bool done);	// osd_menu.cpp
+// Commands to the Pocket the bridge has asked again (core_bridge_cmd.v's watchdog), from the
+// control register's second byte, for the CD Debug overlay
+uint8_t card_asked_again = 0;
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -46,6 +49,7 @@ static bool apf_issued = false;
 bool dataslot_ready(){
   int apf_codes = READ_TARGET_DATASLOT_CONTROL(0);
   if (!apf_issued) return true;
+  card_asked_again = apf_codes >> 8;
   drive_trace_card_wait(apf_codes & APF_DONE);
   if ((apf_codes & APF_ERROR) > 0) mainprintf("\033[38;1;5mCheck codes %0.4X\033[0m\r\n", (apf_codes & APF_ERROR));
   // if (!(apf_codes & APF_DONE)) mainprintf("\033[38;1;5mwe are waiting\033[0m\r\n");
@@ -105,6 +109,7 @@ static uint32_t dataslot_result()
   do
   {
     apf_codes = READ_TARGET_DATASLOT_CONTROL(0);
+    card_asked_again = apf_codes >> 8;
     drive_trace_card_wait(apf_codes & APF_DONE);
   } while (!(apf_codes & APF_DONE));
   return (apf_codes & APF_ERROR);

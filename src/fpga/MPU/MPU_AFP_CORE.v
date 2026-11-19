@@ -62,6 +62,7 @@ module MPU_AFP_CORE
 	input                  	target_dataslot_ack,        // asserted upon command start until completion
 	input                  	target_dataslot_done,       // asserted upon command finish until next command is issued    
 	input        [5:0]     	target_dataslot_err,        // contains result of command execution. zero is OK
+	input        [7:0]     	target_wd_count,            // commands asked again by core_bridge_cmd.v's watchdog
 
 
 	output reg   [15:0]    	target_dataslot_id,         // parameters for each of the read/reload/write commands
@@ -625,7 +626,7 @@ always @(posedge clk_mpu) begin
 						ext_data_out <= target_dataslot_slotoffset;
 					end
 					'h90 : begin // target_dataslot_slotoffset read
-						ext_data_out <= {target_dataslot_ack, target_dataslot_done, target_dataslot_err[5:0]};
+						ext_data_out <= {target_wd_count, target_dataslot_ack, target_dataslot_done, target_dataslot_err[5:0]};
 						externalInterrupt <= 0;
 					end
 					// UART Data rate
