@@ -28,12 +28,7 @@ A CD+G disc needs its subcode beside its CUE, in a `.sub` of the CUE's name (the
 
 ## HuCards
 
-The core plays HuCards as well as discs. Copy them as `.pce` files into `Assets/pcecd/common/`, and pick one from the same list as the discs. The system card still needs to be in place, although a HuCard boots straight into its game with no CD unit attached.
-
-- Memories and Sleep work for HuCards as they do for discs.
-- A HuCard that saves keeps its save in `Saves/pcecd`, under the game name.
-- Cards up to 2.5 MB load, with or without a 512-byte header, and Street Fighter II' and Populous get their extra banks and RAM as on MiSTer.
-- Skip the Run screen and Another disc don't apply to a HuCard.
+The core plays HuCards as well as discs. Copy them as `.pce` files into `Assets/pcecd/common/`, and pick one from the same list as the discs. The system card still needs to be in place, although a HuCard boots straight into its game with no CD unit attached. Memories and Sleep work for HuCards as they do for discs.
 
 The system cards are `.pce` files too, so they show up in the list. Picking one just shows its title screen.
 
@@ -79,8 +74,9 @@ not an issue.
 | **CD Audio Boost** | disc music twice as loud as the console's own sound |
 | **ADPCM Audio Boost** | voices and sound effects from the ADPCM chip a quarter louder |
 | **CD Debug** | the drive's state in yellow text at the top of the screen, for tracking down a disc that won't load |
+| **Game** | another game, a disc's `.cue` or a HuCard's `.pce`. The core restarts on it, and the game you were playing keeps its save |
 | **Another disc** | puts another disc in with the game running |
-| **PCE Boot Rom** | another system card from `Assets/pcecd/common`. The core will restart. |
+| **PCE Boot Rom** | another system card from `Assets/pcecd/common`. The core will restart. The choice lasts until you quit the core; the next start takes the system card named in Installation again |
 
 ## Credits and licence
 
