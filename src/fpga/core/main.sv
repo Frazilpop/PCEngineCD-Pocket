@@ -269,6 +269,7 @@ module pce (
   reg          cd_region;
 	wire			CD_almost_full;
 	wire [8:0]	colno;				// the VDC's colour number, for Skip the Run screen's black
+	wire			vdc_border;			// the VDC's border, in its place, this module's window, while the console is held
 	wire			AUDIO_almost_full;
   wire [16:0]  adram_a;
   wire [3:0]   adram_di, adram_do;
@@ -375,7 +376,7 @@ module pce (
 		
 		.CD_almost_full		(CD_almost_full),
 		.AUDIO_almost_full	(AUDIO_almost_full),
-		.BORDER_OUT				(border),
+		.BORDER_OUT				(vdc_border),
 		.VIDEO_COLNO			(colno),
 
 		.SS_HOLD					(ss_hold),
@@ -686,16 +687,39 @@ module pce (
 
   logic [7:0] r1, b1, g1;
 
+  // The console held in reset (the Pocket loading a game or a save, Reset core) still runs the
+  // VCE's raster (pce_top.vhd), but the VDC's reset raises its border for every dot, so the line
+  // buffer takes none and each frame reaches the Pocket empty. After a game chosen from Core
+  // Settings the Pocket's scaler then showed its last frames of the old game, flickering, all
+  // through the load. Held, the border is a 256 x 240 window of this module's on the VCE's
+  // syncs and dots, and the picture black (below), so the Pocket is sent black frames.
+  reg  held = 1;
+  reg  held_win = 0;
+  reg  held_hs = 0, held_vs = 0;
+  reg  [9:0] held_dot = 0;
+  reg  [8:0] held_line = 0;
+  always @(posedge clk_sys_42_95) begin
+    held <= reset | rom_download;
+    held_hs <= hs;
+    held_vs <= vs;
+    if (vs & ~held_vs) held_line <= 0;
+    else if (hs & ~held_hs) held_line <= held_line + 9'd1;
+    if (hs & ~held_hs) held_dot <= 0;
+    else if (ce_vid & ~&held_dot) held_dot <= held_dot + 10'd1;
+    held_win <= held_line >= 9'd22 && held_line < 9'd262 && held_dot >= 10'd64 && held_dot < 10'd320;
+  end
+  assign border = held ? ~held_win : vdc_border;
+
   // A save state's load blanks the picture from the header's match to the let-go: the VDC
   // runs on while VRAM, the SAT and the palette fill, and would draw them half written. A
   // save blanks it from its ask to the let-go (state_engine.sv's blank).
-  // Skip the Run screen's black (below) is held the same way.
+  // Skip the Run screen's black (below) is held the same way, and the console's reset (above).
   // Skip the Run screen is the system card's: a HuCard has no title to skip and sends the
   // drive no command, so the presses and the black would never end
   wire skip_run_on = skip_run_enable & ~hucard;
   reg skip_run_black = 1;
   reg ss_blank_v = 0;
-  always @(posedge clk_mem_85_91) ss_blank_v <= ss_blank | (skip_run_on & skip_run_black);
+  always @(posedge clk_mem_85_91) ss_blank_v <= ss_blank | held | (skip_run_on & skip_run_black);
 
   assign {r1, g1, b1} = ss_blank_v ? 24'd0 :
                         raw_rgb_enable ? {{r, r, r[2:1]}, {g, g, g[2:1]}, {b, b, b[2:1]}} : pal_color;
