@@ -12,8 +12,8 @@
 #
 # The games and the system cards are the card's own: the games in Assets/pcecd/common,
 # which every PC Engine CD core reads, the system card in Assets/pcecd/frazilpop.PCEngineCD
-# (slot 1, core-specific, so it isn't listed beside the HuCards) or, as before 1.2.3, in
-# common (slot 4), and Mazamars312's core stays as it was beside this one. Nothing there
+# (slots 1 and 5 to 8, core-specific, so it isn't listed beside the HuCards) or, as before
+# 1.2.3, in common (slots 4 and 9 to 12), and Mazamars312's core stays as it was beside this one. Nothing there
 # is moved, written over or added; a card with no system card in either is warned of. Platforms/pcecd.json is copied only
 # when the card has none, and so is its image until the banner has been made
 # (art/pcecd-banner.png); from then on the image goes on whenever the card's differs,
@@ -44,7 +44,7 @@ DIST="$REPO/dist"
 BIN="$DIST/Cores/$CORE/bitstream.rbf_r"
 FW="$DIST/Assets/pcecd/$CORE/pce_mpu_bios.bin"
 RECORD="$REPO/build/deployed.txt"
-BITSTREAM_NOT_BEFORE="2026-11-20 12:50"
+BITSTREAM_NOT_BEFORE="2026-11-20 19:00"
 [ -f "$BIN" ] || { echo "no $BIN - run tools/build.sh first"; exit 1; }
 
 VOL="" STATUS=0
@@ -140,10 +140,10 @@ cmp -s "$FW" "$VOL/Assets/pcecd/$CORE/pce_mpu_bios.bin" || { echo "the firmware 
 echo "Copied the firmware, $(wc -c < "$FW" | tr -d ' ') bytes"
 
 # the system card, in the core's folder or common: looked for, never copied
+# (one slot for each name, as the Pocket looks for a slot's file by its one name)
 cards=$(python3 -I -c '
 import json, sys
-s = next(s for s in json.load(open(sys.argv[1]))["data"]["data_slots"] if s["id"] == 1)
-print("\n".join([s["filename"]] + s.get("alternate_filenames", [])))' "$DIST/Cores/$CORE/data.json")
+print("\n".join(dict.fromkeys(s["filename"] for s in json.load(open(sys.argv[1]))["data"]["data_slots"] if s.get("filename", "").endswith(".pce"))))' "$DIST/Cores/$CORE/data.json")
 found= common=
 while IFS= read -r f; do
 	[ -f "$VOL/Assets/pcecd/$CORE/$f" ] && found=1

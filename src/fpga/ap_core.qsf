@@ -372,7 +372,7 @@ set_global_assignment -name OUTPUT_IO_TIMING_FAR_END_VMEAS "HALF SIGNAL SWING" -
 # end ENTITY(mf_pllbase_0002)
 # ---------------------------
 set_global_assignment -name NUM_PARALLEL_PROCESSORS 4
-set_global_assignment -name SEED 2
+set_global_assignment -name SEED 3
 set_global_assignment -name PHYSICAL_SYNTHESIS_EFFORT EXTRA
 set_global_assignment -name ALM_REGISTER_PACKING_EFFORT LOW
 set_instance_assignment -name IO_STANDARD "3.3-V LVCMOS" -to cart_tran_bank0[7]

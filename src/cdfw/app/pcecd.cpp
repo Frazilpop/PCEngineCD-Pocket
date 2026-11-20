@@ -50,12 +50,17 @@ static uint8_t adj = 0;
 // answers a US console's signature for it (cd.vhd's registers C5 to C7): MiSTer's
 // test, its whole file for "ALL DATA". The file is read with the scratch RAM the
 // CUE is about to be read into. An error here is not one the player needs to see.
-// The system card's slot: 1, the core's own folder, or 4, common, where it was kept before
-// 1.2.3. core_top.v's syscard_slots loads slot 1's whenever it is there, so the file read
-// is the one the console runs.
+// The system card's slot: one for each card's name, as the Pocket looks for a slot's file
+// by its one name, first the core's own folder's (1, 5 to 8), then common's (4, 9 to 12),
+// where they were kept before 1.2.3, each in data.json's order. core_top.v's
+// syscard_slots loads the first of these the Pocket found, so the file read is the one
+// the console runs. 4 when there is none, as before.
 static uint16_t bios_slot()
 {
-	return dataslot_size_or_0(1) ? 1 : 4;
+	static const uint16_t order[] = { 1, 5, 6, 7, 8, 4, 9, 10, 11, 12 };
+	for (uint16_t slot : order)
+		if (dataslot_size_or_0(slot)) return slot;
+	return 4;
 }
 
 static bool bios_is_us()

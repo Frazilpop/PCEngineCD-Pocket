@@ -30,11 +30,10 @@
 	"size_maximum": "0x20800"
 	},
 	{
-	"name": "PCE Boot Rom",
+	"name": "System Card 3.0 JP",
 	"id": 1,
 	"required": false,
 	"filename": "bios_3_0_jap.pce",
-	"alternate_filenames": ["bios_3_0_usa.pce", "bios_2_0_usa.pce", "bios_2_0_jap.pce", "bios_1_0_jap.pce"],
 	"extensions": [
 		"pce"
 		],
@@ -43,11 +42,106 @@
 	"size_maximum": "0x40000"
 	},
 	{
-	"name": "PCE Boot Rom (common)",
+	"name": "System Card 3.0 US",
+	"id": 5,
+	"required": false,
+	"filename": "bios_3_0_usa.pce",
+	"extensions": [
+		"pce"
+		],
+	"parameters": "0x0000000A",
+	"address": "0x10000000",
+	"size_maximum": "0x40000"
+	},
+	{
+	"name": "System Card 2.0 US",
+	"id": 6,
+	"required": false,
+	"filename": "bios_2_0_usa.pce",
+	"extensions": [
+		"pce"
+		],
+	"parameters": "0x0000000A",
+	"address": "0x10000000",
+	"size_maximum": "0x40000"
+	},
+	{
+	"name": "System Card 2.0 JP",
+	"id": 7,
+	"required": false,
+	"filename": "bios_2_0_jap.pce",
+	"extensions": [
+		"pce"
+		],
+	"parameters": "0x0000000A",
+	"address": "0x10000000",
+	"size_maximum": "0x40000"
+	},
+	{
+	"name": "System Card 1.0 JP",
+	"id": 8,
+	"required": false,
+	"filename": "bios_1_0_jap.pce",
+	"extensions": [
+		"pce"
+		],
+	"parameters": "0x0000000A",
+	"address": "0x10000000",
+	"size_maximum": "0x40000"
+	},
+	{
+	"name": "System Card 3.0 JP (common)",
 	"id": 4,
 	"required": false,
 	"filename": "bios_3_0_jap.pce",
-	"alternate_filenames": ["bios_3_0_usa.pce", "bios_2_0_usa.pce", "bios_2_0_jap.pce", "bios_1_0_jap.pce"],
+	"extensions": [
+		"pce"
+		],
+	"parameters": "0x00000008",
+	"address": "0x10000000",
+	"size_maximum": "0x40000"
+	},
+	{
+	"name": "System Card 3.0 US (common)",
+	"id": 9,
+	"required": false,
+	"filename": "bios_3_0_usa.pce",
+	"extensions": [
+		"pce"
+		],
+	"parameters": "0x00000008",
+	"address": "0x10000000",
+	"size_maximum": "0x40000"
+	},
+	{
+	"name": "System Card 2.0 US (common)",
+	"id": 10,
+	"required": false,
+	"filename": "bios_2_0_usa.pce",
+	"extensions": [
+		"pce"
+		],
+	"parameters": "0x00000008",
+	"address": "0x10000000",
+	"size_maximum": "0x40000"
+	},
+	{
+	"name": "System Card 2.0 JP (common)",
+	"id": 11,
+	"required": false,
+	"filename": "bios_2_0_jap.pce",
+	"extensions": [
+		"pce"
+		],
+	"parameters": "0x00000008",
+	"address": "0x10000000",
+	"size_maximum": "0x40000"
+	},
+	{
+	"name": "System Card 1.0 JP (common)",
+	"id": 12,
+	"required": false,
+	"filename": "bios_1_0_jap.pce",
 	"extensions": [
 		"pce"
 		],
