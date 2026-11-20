@@ -34,7 +34,7 @@ The system cards are `.pce` files too, so they show up in the list. Picking one 
 
 ## Memories and Sleep
 
-This core supports Memories (save states) and Sleep. It's 448K, 576K with the Memory Base 128 on, and up to 2.6 MB once a game has used the Arcade Card's RAM. A memory made with another system card, or with the Arcade Card in it when Arcade System has been turned off, won't load.
+This core supports Memories (save states) and Sleep. A Memory is 448K, 576K with the Memory Base 128 on, and up to 2.6 MB once a game has used the Arcade Card's RAM. A memory made with another system card, or with the Arcade Card in it when Arcade System has been turned off, won't load.
 
 ## Memory Base 128
 
@@ -70,13 +70,11 @@ not an issue.
 | **Use Turbo Tap** | the Turbo Tap, the console's adapter for more game pads. With it on, the Dock's second to fourth controllers play as players 2 to 4. With it off, only the first controller is used. |
 | **Extra Sprites** | draws more sprites on a line than the console can, for less flicker. Note that some games hide things with the limit on purpose. |
 | **Raw RGB Color** | the console's colours as they are, without the core's colour palette |
-| **Master Audio Boost** | No Boost, 2x Boost or 4x Boost: louder sound, compressed so the loudest parts don't clip |
-| **CD Audio Boost** | disc music twice as loud as the console's own sound |
-| **ADPCM Audio Boost** | voices and sound effects from the ADPCM chip a quarter louder |
-| **CD Debug** | the drive's state in yellow text at the top of the screen, for tracking down a disc that won't load |
+| **Audio Boost** | Off, 2x or 4x – volume boost with a compressor applied so the loudest parts don't clip |
+| **Audio Balance** | Boost CD Music, Voices or Both. CD Music Boost makes the disc's music twice as loud as the console's sound. Voices Boost makes the voices and sound effects from the ADPCM chip a quarter louder. |
+| **CD Debug** | the drive's state in yellow text at the top of the screen, for tracking down a disc that won't load. It's off again each time the core starts |
 | **Game** | another game, a disc's `.cue` or a HuCard's `.pce`. The core restarts on it, and the game you were playing keeps its save |
 | **Another disc** | puts another disc in with the game running |
-| **PCE Boot Rom** | another system card from `Assets/pcecd/common`. The core will restart. The choice lasts until you quit the core; the next start takes the system card named in Installation again |
 
 ## Credits and licence
 
