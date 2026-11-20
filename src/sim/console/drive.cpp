@@ -160,6 +160,7 @@ static void bridge_start(int slot, uint32_t at, uint32_t offset, uint32_t length
 }
 
 uint32_t dataslot_size(uint16_t slot) { return slots[slot].size; }
+uint32_t dataslot_size_or_0(uint16_t slot) { return slots[slot].size; }	// a slot not opened is 0
 
 uint32_t dataslot_read(uint16_t slot, uint32_t address, uint32_t offset, uint32_t length)
 {

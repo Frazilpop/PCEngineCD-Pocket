@@ -32,6 +32,7 @@ void RISCFileCacheSize(uint32_t size);
 void RISCFileCopy(uint8_t *dst, uint32_t len);
 bool dataslot_ready();
 uint32_t dataslot_size(uint16_t value);
+uint32_t dataslot_size_or_0(uint16_t value);
 uint32_t dataslot_read_lba_set(uint16_t dataslot, uint32_t address, uint32_t offset);
 uint32_t dataslot_read_lba(uint32_t length);
 uint32_t dataslot_read_lba_fast(uint32_t length, bool wait_update);

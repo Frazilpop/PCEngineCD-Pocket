@@ -625,7 +625,7 @@ core_bridge_cmd icb (
   
   ******************************************************/
 
-  reg ioctl_download = 0;
+  wire ioctl_download;	// syscard_slots, below
   // slot 100, the game: a CUE or a HuCard, loaded by the Pocket at 0x30000000 before the
   // core starts (data.json), into the SDRAM beside the system card (main.sv). The request's
   // id stays until the next, so the load ends at the next request or at all-complete.
@@ -650,8 +650,13 @@ core_bridge_cmd icb (
   assign ioctl_addr = ioctl_use_h ? ioctl_addr_h : ioctl_addr_c;
   assign ioctl_dout = ioctl_use_h ? ioctl_dout_h : ioctl_dout_c;
 
+syscard_slots syscard_slots (
+    .clk(clk_74a),
+    .wr_id(dataslot_requestwrite_id),
+    .rd_id(dataslot_requestread_id),
+    .download(ioctl_download)
+);
 always @(posedge clk_74a) begin
-  ioctl_download 	<= dataslot_requestwrite_id == 1 	|| dataslot_requestread_id == 1;
   hucard_download <= dataslot_requestwrite_id == 100 && !dataslot_allcomplete;
   save_download 	<= dataslot_requestwrite_id == 2 	|| dataslot_requestread_id == 2;
 end
@@ -1425,4 +1430,32 @@ MPU_AFP_CORE #(
 
   synch_3 pll_locked_sync (pll_core_locked, pll_core_locked_s, clk_74a);
 
+endmodule
+
+// The system card's load. It comes from slot 1, in the core's own folder, or slot 4, in
+// common, where it was kept before 1.2.3. Slot 1's wins whatever order the Pocket loads
+// them in: slot 4's is taken only until slot 1 has been seen (a later one is dropped, as
+// main.sv writes nothing while no load is up), and when slot 4's hands over to slot 1's
+// the load drops for 8 clocks of 74 MHz (five of main.sv's 43 MHz), so main.sv's write
+// address and state_engine.sv's size and sum start again at its rise. The firmware reads
+// the same slot for the card's region (app/pcecd.cpp's bios_slot).
+module syscard_slots (
+    input  wire        clk,
+    input  wire [15:0] wr_id,
+    input  wire [15:0] rd_id,
+    output reg         download = 0
+);
+  reg [15:0] id_old = 0;
+  reg        slot1_seen = 0;
+  reg  [3:0] gap = 0;
+  wire       handover = wr_id == 16'd1 && id_old == 16'd4;
+
+  always @(posedge clk) begin
+    id_old <= wr_id;
+    if (wr_id == 16'd1) slot1_seen <= 1;
+    if (handover) gap <= 4'd8;
+    else if (gap != 0) gap <= gap - 4'd1;
+    download <= ((wr_id == 16'd1 || (wr_id == 16'd4 && !slot1_seen)) && gap == 0 && !handover)
+             || rd_id == 16'd1;
+  end
 endmodule

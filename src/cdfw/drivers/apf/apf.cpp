@@ -91,6 +91,15 @@ uint32_t dataslot_size(uint16_t value)
   return (size);
 }
 
+// A slot's size, 0 when the table has no such slot. dataslot_size can't say: a slot
+// not found is taken as the table's first, and that one's size returned.
+uint32_t dataslot_size_or_0(uint16_t value)
+{
+  for (int i = 0; i <= 0x100; i += 2)
+    if (DATASLOT_RAM_ACCESS(i<<2) == value) return DATASLOT_RAM_ACCESS((i+1)<<2);
+  return 0;
+}
+
 // This checks the reg in the system on if there was an apf dataslot update. Once this reg is read it is cleared by hardware
 bool dataslot_updated()
 {

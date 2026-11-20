@@ -10,9 +10,11 @@
 # the volume with Analogue_Pocket.json at its root, in the Mac's reader or the
 # Pocket's own over USB.
 #
-# The games and the system cards are the card's own: every PC Engine CD core
-# reads Assets/pcecd/common, and Mazamars312's core stays as it was beside this one.
-# Nothing there is moved, written over or added. Platforms/pcecd.json is copied only
+# The games and the system cards are the card's own: the games in Assets/pcecd/common,
+# which every PC Engine CD core reads, the system card in Assets/pcecd/frazilpop.PCEngineCD
+# (slot 1, core-specific, so it isn't listed beside the HuCards) or, as before 1.2.3, in
+# common (slot 4), and Mazamars312's core stays as it was beside this one. Nothing there
+# is moved, written over or added; a card with no system card in either is warned of. Platforms/pcecd.json is copied only
 # when the card has none, and so is its image until the banner has been made
 # (art/pcecd-banner.png); from then on the image goes on whenever the card's differs,
 # and every PC Engine CD core on the card shows it.
@@ -42,7 +44,7 @@ DIST="$REPO/dist"
 BIN="$DIST/Cores/$CORE/bitstream.rbf_r"
 FW="$DIST/Assets/pcecd/$CORE/pce_mpu_bios.bin"
 RECORD="$REPO/build/deployed.txt"
-BITSTREAM_NOT_BEFORE="2026-11-18 13:20"
+BITSTREAM_NOT_BEFORE="2026-11-20 12:50"
 [ -f "$BIN" ] || { echo "no $BIN - run tools/build.sh first"; exit 1; }
 
 VOL="" STATUS=0
@@ -136,6 +138,22 @@ mkdir -p "$VOL/Assets/pcecd/$CORE"
 cp "$FW" "$VOL/Assets/pcecd/$CORE/"
 cmp -s "$FW" "$VOL/Assets/pcecd/$CORE/pce_mpu_bios.bin" || { echo "the firmware on the card differs from the build"; exit 1; }
 echo "Copied the firmware, $(wc -c < "$FW" | tr -d ' ') bytes"
+
+# the system card, in the core's folder or common: looked for, never copied
+cards=$(python3 -I -c '
+import json, sys
+s = next(s for s in json.load(open(sys.argv[1]))["data"]["data_slots"] if s["id"] == 1)
+print("\n".join([s["filename"]] + s.get("alternate_filenames", [])))' "$DIST/Cores/$CORE/data.json")
+found= common=
+while IFS= read -r f; do
+	[ -f "$VOL/Assets/pcecd/$CORE/$f" ] && found=1
+	[ -f "$VOL/Assets/pcecd/common/$f" ] && common=1
+done <<<"$cards"
+if [ -z "$found$common" ]; then
+	echo "WARNING: no system card in $VOL/Assets/pcecd/$CORE or common (one of: $(echo $cards)); the screen stays black without it"
+elif [ -z "$found" ]; then
+	echo "The system card is in common only: it works, and shows in the Game list"
+fi
 
 # the platform's name, only when the card has none; its image, also when the repo has a
 # banner of its own and the card's differs

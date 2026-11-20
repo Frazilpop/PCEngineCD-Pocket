@@ -32,7 +32,20 @@
 	{
 	"name": "PCE Boot Rom",
 	"id": 1,
-	"required": true,
+	"required": false,
+	"filename": "bios_3_0_jap.pce",
+	"alternate_filenames": ["bios_3_0_usa.pce", "bios_2_0_usa.pce", "bios_2_0_jap.pce", "bios_1_0_jap.pce"],
+	"extensions": [
+		"pce"
+		],
+	"parameters": "0x0000000A",
+	"address": "0x10000000",
+	"size_maximum": "0x40000"
+	},
+	{
+	"name": "PCE Boot Rom (common)",
+	"id": 4,
+	"required": false,
 	"filename": "bios_3_0_jap.pce",
 	"alternate_filenames": ["bios_3_0_usa.pce", "bios_2_0_usa.pce", "bios_2_0_jap.pce", "bios_1_0_jap.pce"],
 	"extensions": [

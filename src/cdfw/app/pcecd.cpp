@@ -50,17 +50,26 @@ static uint8_t adj = 0;
 // answers a US console's signature for it (cd.vhd's registers C5 to C7): MiSTer's
 // test, its whole file for "ALL DATA". The file is read with the scratch RAM the
 // CUE is about to be read into. An error here is not one the player needs to see.
+// The system card's slot: 1, the core's own folder, or 4, common, where it was kept before
+// 1.2.3. core_top.v's syscard_slots loads slot 1's whenever it is there, so the file read
+// is the one the console runs.
+static uint16_t bios_slot()
+{
+	return dataslot_size_or_0(1) ? 1 : 4;
+}
+
 static bool bios_is_us()
 {
 	const char *chunk = (const char *)(MAIN_SCRACH_ADDRESS_OFFSET + 0x200);
-	uint32_t size = dataslot_size(1);
+	uint16_t slot = bios_slot();
+	uint32_t size = dataslot_size_or_0(slot);
 	bool error_enabled = file_error_enabled;
 	int error_code = file_error_code;
 	bool found = false;
 	for (uint32_t at = 0; (at < size) && !found; at += 0x3C00)
 	{
 		uint32_t len = (size - at < 0x3E00) ? size - at : 0x3E00;
-		drive_trace.bios_error = dataslot_read(1, APF_SCRACH_ADDRESS_OFFSET + 0x200, at, len);
+		drive_trace.bios_error = dataslot_read(slot, APF_SCRACH_ADDRESS_OFFSET + 0x200, at, len);
 		if (drive_trace.bios_error) break;
 		for (uint32_t i = 0; (i + 8 <= len) && !found; i++)
 		{
@@ -110,7 +119,7 @@ static void tray_poll()
 // The first reset of the drive loads the disc, as nothing else does
 static void first_load()
 {
-	drive_trace.bios_size = dataslot_size(1);
+	drive_trace.bios_size = dataslot_size_or_0(bios_slot());
 	osd_trace_stage('s');
 	bios_us = bios_is_us();
 	drive_trace.bios_us = bios_us;
