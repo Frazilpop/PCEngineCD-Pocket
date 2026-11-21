@@ -7,8 +7,8 @@
       "description": "PC Engine CD for the Analogue Pocket with save states",
       "author": "frazilpop",
       "url": "https://github.com/Frazilpop/PCEngineCD-Pocket",
-      "version": "1.2.2",
-      "date_release": "2026-11-20"
+      "version": "1.2.3",
+      "date_release": "2026-11-21"
     },
     "framework": {
       "target_product": "Analogue Pocket",

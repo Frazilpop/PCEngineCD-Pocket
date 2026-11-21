@@ -18,9 +18,11 @@ This core was originally forked from [Mazamars312's openfpga-pcengine-cd](https
 You will need an Analogue Pocket on firmware 2.3 or later. No game data or system card comes with this core: you'll need your own PC Engine CD / TurboGrafx-CD discs and a system card.
 
 1. Download the zip from the latest release on GitHub and merge `Cores`, `Platforms` and `Assets` into the folders already on your Analogue Pocket's SD card.
-2. Copy your system card into `Assets/pcecd/common/`: `bios_3_0_jap.pce` by default, with `bios_3_0_usa.pce`, `bios_2_0_usa.pce`, `bios_2_0_jap.pce` or `bios_1_0_jap.pce` as other choices.
-3. Copy your discs into the same folder as `.cue` and `.bin` files.
+2. Copy your system card into `Assets/pcecd/frazilpop.PCEngineCD/`: `bios_3_0_jap.pce` by default, with `bios_3_0_usa.pce`, `bios_2_0_usa.pce`, `bios_2_0_jap.pce` or `bios_1_0_jap.pce` as other choices.
+3. Copy your discs into `Assets/pcecd/common/` as `.cue` and `.bin` files.
 4. On the Pocket: openFPGA → PC Engine CD, then pick a disc's `.cue` (or a HuCard's `.pce`, see below).
+
+A system card in `Assets/pcecd/common/` will also work, but it shows up in the game list. Move it to `Assets/pcecd/frazilpop.PCEngineCD/` if you want the list to only show games.
 
 Saves are stored in `Saves/pcecd`.
 
@@ -29,8 +31,6 @@ A CD+G disc needs its subcode beside its CUE, in a `.sub` of the CUE's name (the
 ## HuCards
 
 The core plays HuCards as well as discs. Copy them as `.pce` files into `Assets/pcecd/common/`, and pick one from the same list as the discs. The system card still needs to be in place, although a HuCard boots straight into its game with no CD unit attached. Memories and Sleep work for HuCards as they do for discs.
-
-The system cards are `.pce` files too, so they show up in the list. Picking one just shows its title screen.
 
 ## Memories and Sleep
 
